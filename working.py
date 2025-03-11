@@ -11,10 +11,12 @@ import docx  # For Word document handling
 import ast  # For checking Python syntax
 import io  # For handling uploaded files
 import sqlite3
+import os
+from dotenv import load_dotenv
+load_dotenv()
 
-# OpenAI API Key
-OPENAI_API_KEY = "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"
-openai.api_key = OPENAI_API_KEY
+openai.api_key = os.getenv("OPENAI_API_KEY")
+print(f"Your API Key is: {openai.api_key}")
 
 # Initialize Database
 def init_db():
