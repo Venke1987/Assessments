@@ -6,3 +6,4 @@ seaborn
 openai
 pymupdf
 python-docx
+load_dotenv
