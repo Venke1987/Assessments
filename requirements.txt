@@ -2,12 +2,6 @@ matplotlib
 streamlit
 pandas
 numpy
-random
 openai
-json
-datetime
-fitz
-docx
-ast
-io
-sqlite3
+pymupdf  # (for `fitz`)
+python-docx  # (for `docx`)
