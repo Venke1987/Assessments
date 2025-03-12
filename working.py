@@ -9,15 +9,17 @@ from datetime import datetime
 import fitz  # PyMuPDF for PDFs
 import docx  # For Word document handling
 import ast  # For checking Python syntax
-import io  # For handling uploaded files
 import sqlite3
 import os
 from dotenv import load_dotenv
-load_dotenv()
 
+# Load environment variables and set OpenAI API key from secrets
+load_dotenv()
 openai.api_key = st.secrets["OPENAI_API_KEY"]
 
-# Initialize Database
+# ----------------------------
+# Database Functions
+# ----------------------------
 def init_db():
     conn = sqlite3.connect('student_quiz_history.db')
     c = conn.cursor()
@@ -35,7 +37,6 @@ def init_db():
     conn.commit()
     return conn
 
-# Save quiz results to database
 def save_quiz_result(student_id, student_name, topic, score, total_questions):
     conn = init_db()
     c = conn.cursor()
@@ -46,11 +47,9 @@ def save_quiz_result(student_id, student_name, topic, score, total_questions):
     conn.commit()
     conn.close()
 
-# Get quiz history for a student
 def get_student_quiz_history(student_id=None):
     conn = init_db()
     c = conn.cursor()
-    
     if student_id:
         c.execute('''
         SELECT student_id, student_name, topic, score, total_questions, timestamp
@@ -64,19 +63,20 @@ def get_student_quiz_history(student_id=None):
         FROM quiz_results
         ORDER BY timestamp DESC
         ''')
-    
     results = c.fetchall()
     conn.close()
-    
     if results:
         return pd.DataFrame(results, columns=['student_id', 'student_name', 'topic', 'score', 'total_questions', 'timestamp'])
     return pd.DataFrame()
 
+# ----------------------------
+# File Extraction & Syntax Check Functions
+# ----------------------------
 def extract_text_from_docx(uploaded_file):
     """Extract text from a .docx file"""
     try:
         doc = docx.Document(uploaded_file)
-        text = "\n".join([para.text for para in doc.paragraphs])  # Extract paragraphs as text
+        text = "\n".join([para.text for para in doc.paragraphs])
         return text
     except Exception as e:
         return f"Error extracting text: {str(e)}"
@@ -87,7 +87,7 @@ def extract_text_from_pdf(uploaded_file):
         text = ""
         with fitz.open(stream=uploaded_file.read(), filetype="pdf") as doc:
             for page in doc:
-                text += page.get_text() + "\n"  # Extract text from each page
+                text += page.get_text() + "\n"
         return text
     except Exception as e:
         return f"Error extracting text: {str(e)}"
@@ -100,6 +100,9 @@ def check_python_syntax(code):
     except SyntaxError as e:
         return f"Syntax Error: {e}"
 
+# ----------------------------
+# Sample Student Data
+# ----------------------------
 # Sample Student Data
 students_data = {
     "SEEE001": {"name": "Adhithya V", "proficiency": {"Fuzzy Logic": {1: 0.59, 2: 0.64, 3: 0.69, 4: 0.74, 5: 0.79, 6: 0.84}}},
@@ -167,27 +170,35 @@ students_data = {
 
 
 
-# Sample Questions Data
-questions = [
-    {"text": "What is the primary goal of supervised learning?", "options": [
-        "To cluster data points without labels",
-        "To learn patterns from labeled data to make predictions",
-        "To reduce the dimensionality of data",
-        "To generate new data samples"
-    ], "correct": "To learn patterns from labeled data to make predictions"},
-    {"text": "Which algorithm is used for classification?", "options": [
-        "K-Means", "Decision Tree", "PCA", "Apriori"
-    ], "correct": "Decision Tree"},
-    {"text": "What does CNN stand for?", "options": [
-        "Convolutional Neural Network", "Central Neural Network",
-        "Computational Node Network", "Convolutional Node Network"
-    ], "correct": "Convolutional Neural Network"},
-    {"text": "Which technique helps reduce overfitting?", "options": [
-        "Regularization", "Dropout", "Both 1 & 2", "None"
-    ], "correct": "Both 1 & 2"}
-]
+# ----------------------------
+# Function to Generate Quiz Question using OpenAI
+# ----------------------------
+def generate_question(topic):
+    prompt = f"Create a multiple-choice question about {topic} with 4 options and indicate the correct answer. Format your response as JSON with these fields: 'text', 'options', and 'correct'."
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": "You are an AI that generates educational quiz questions. Return responses in valid JSON format only."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7,
+            max_tokens=250
+        )
+        response_text = response.choices[0].message.content.strip()
+        # Clean up markdown if present
+        if "```json" in response_text:
+            response_text = response_text.split("```json")[1].split("```")[0].strip()
+        elif "```" in response_text:
+            response_text = response_text.split("```")[1].split("```")[0].strip()
+        return json.loads(response_text)
+    except Exception as e:
+        st.error(f"Error generating question: {str(e)}")
+        return {"text": "What is AI?", "options": ["A Technology", "A Food", "A Color", "None"], "correct": "A Technology"}
 
-# Initialize session states for quiz tracking
+# ----------------------------
+# Initialize Session State Variables
+# ----------------------------
 if "quiz_active" not in st.session_state:
     st.session_state.quiz_active = False
 if "question_count" not in st.session_state:
@@ -199,37 +210,43 @@ if "current_question" not in st.session_state:
 if "score" not in st.session_state:
     st.session_state.score = 0
 
-# Initialize database
+# Initialize the database
 init_db()
 
-# Streamlit UI
+# ----------------------------
+# Streamlit App Layout
+# ----------------------------
 st.title("🚀 Generative AI-Based Students Assessment System")
 st.sidebar.header("Navigation")
-page = st.sidebar.radio("Go to", ["📊 Dashboard", "📝 Take Quiz", "📚 Quiz History", "🧠 AI-Powered Hints", "🔍 AI Peer Assessment", "🔍 Plagiarism/Reasoning Finder", "📂 Code Evaluation & Plagiarism Check"])
+page = st.sidebar.radio("Go to", [
+    "📊 Dashboard", 
+    "📝 Take Quiz", 
+    "📚 Quiz History", 
+    "🧠 AI-Powered Hints", 
+    "🔍 AI Peer Assessment", 
+    "🔍 Plagiarism/Reasoning Finder", 
+    "📂 Code Evaluation & Plagiarism Check"
+])
 
-### 📊 CLASS PERFORMANCE DASHBOARD ###
+# ----------------------------
+# Dashboard Section
+# ----------------------------
 if page == "📊 Dashboard":
     st.header("📊 Class Performance Dashboard")
-    
-    # Select Student
     student_id = st.selectbox("Select a Student", list(students_data.keys()))
     student = students_data[student_id]
     st.subheader(f"Student: {student['name']}")
-    
-    # Proficiency Data
     prof_data = student["proficiency"]
     topics = list(prof_data.keys())
     bloom_levels = [1, 2, 3, 4, 5, 6]
-    
-    # Heatmap Data
-    heatmap_data = pd.DataFrame({topic: [prof_data[topic].get(level, 0.5) for level in bloom_levels] for topic in topics},
-                                 index=[f"Level {lvl}" for lvl in bloom_levels])
-    
+    heatmap_data = pd.DataFrame(
+        {topic: [prof_data[topic].get(level, 0.5) for level in bloom_levels] for topic in topics},
+        index=[f"Level {lvl}" for lvl in bloom_levels]
+    )
     st.subheader("📌 Bloom's Taxonomy Heatmap")
     fig, ax = plt.subplots(figsize=(8, 5))
     sns.heatmap(heatmap_data, annot=True, cmap="coolwarm", linewidths=0.5, ax=ax)
     st.pyplot(fig)
-    
     st.subheader("📈 Student Progress Over Time")
     dates = [datetime.now().replace(day=i) for i in range(1, 11)]
     scores = [random.uniform(0.4, 0.9) for _ in range(10)]
@@ -241,66 +258,31 @@ if page == "📊 Dashboard":
     plt.title("Student Progress")
     st.pyplot(plt)
 
-### 📝 DYNAMIC QUIZ GENERATION ###
+# ----------------------------
+# Adaptive Quiz Section
+# ----------------------------
 elif page == "📝 Take Quiz":
     st.header("📝 Adaptive Quiz")
-    
-    # Student selection
     student_id = st.selectbox("Select your Student ID", list(students_data.keys()))
     st.write(f"Student Name: {students_data[student_id]['name']}")
-    
-    # Topic selection
     quiz_topic = st.selectbox(
         "Select a topic for your quiz:",
         ["Generative AI", "Machine Learning", "Reinforcement Learning", "Deep Learning", "Natural Language Processing", "Computer Vision"]
     )
-    
-    # Select number of questions
     st.session_state.total_questions = st.slider("Number of Questions", min_value=1, max_value=10, value=5)
     
-    # Start Quiz
     if not st.session_state.quiz_active:
         if st.button("Start Quiz"):
             st.session_state.quiz_active = True
             st.session_state.question_count = 0
             st.session_state.score = 0
-            
-            # Generate the first question using OpenAI
-            prompt = f"Create a multiple-choice question about {quiz_topic} with 4 options and indicate the correct answer. Format your response as JSON with these fields: 'text' (the question), 'options' (array of 4 choices), and 'correct' (the correct answer text)."
-            
-            with st.spinner("Generating question..."):
-                response = openai.ChatCompletion.create(
-                    model="gpt-4o",
-                    messages=[
-                        {"role": "system", "content": "You are an AI that generates educational quiz questions. Return responses in valid JSON format only."},
-                        {"role": "user", "content": prompt}
-                    ],
-                    temperature=0.7,
-                    max_tokens=250
-                )
-                
-                # Parse the response
-                try:
-                    response_text = response.choices[0].message.content.strip()
-                    # Clean up response if it contains extra markdown code blocks
-                    if "```json" in response_text:
-                        response_text = response_text.split("```json")[1].split("```")[0].strip()
-                    elif "```" in response_text:
-                        response_text = response_text.split("```")[1].split("```")[0].strip()
-                    
-                    st.session_state.current_question = json.loads(response_text)
-                    st.rerun()  # Use st.rerun() instead of st.experimental_rerun()
-                except Exception as e:
-                    st.error(f"Error generating question: {str(e)}")
-                    st.write("Response received:", response.choices[0].message.content)
-                    st.session_state.quiz_active = False
-
-    # Quiz Progress
+            st.session_state.current_question = generate_question(quiz_topic)
+            st.rerun()
+    
     if st.session_state.quiz_active and st.session_state.question_count < st.session_state.total_questions:
         q = st.session_state.current_question
         st.write(f"**Q{st.session_state.question_count+1}:** {q['text']}")
         answer = st.radio("Choose the correct answer:", q["options"], index=None)
-        
         if st.button("Submit Answer"):
             if answer:
                 if answer == q["correct"]:
@@ -309,56 +291,12 @@ elif page == "📝 Take Quiz":
                 else:
                     st.error("❌ Incorrect Answer!")
                     st.info(f"The correct answer was: {q['correct']}")
-                
                 st.session_state.question_count += 1
-                
-                # Generate the next question if not done
                 if st.session_state.question_count < st.session_state.total_questions:
-                    prompt = f"Create a multiple-choice question about {quiz_topic} with 4 options and indicate the correct answer. Format your response as JSON with these fields: 'text' (the question), 'options' (array of 4 choices), and 'correct' (the correct answer text)."
-                    
-                    with st.spinner("Generating next question..."):
-                        response = openai.ChatCompletion.create(
-                            model="gpt-4o",
-                            messages=[
-                                {"role": "system", "content": "You are an AI that generates educational quiz questions. Return responses in valid JSON format only."},
-                                {"role": "user", "content": prompt}
-                            ],
-                            temperature=0.7,
-                            max_tokens=250
-                        )
-                        
-                        # Parse the response
-                        try:
-                            response_text = response.choices[0].message.content.strip()
-                            # Clean up response if it contains extra markdown code blocks
-                            if "```json" in response_text:
-                                response_text = response_text.split("```json")[1].split("```")[0].strip()
-                            elif "```" in response_text:
-                                response_text = response_text.split("```")[1].split("```")[0].strip()
-                            
-                            st.session_state.current_question = json.loads(response_text)
-                        except Exception as e:
-                            st.error(f"Error generating question: {str(e)}")
-                            st.write("Response received:", response.choices[0].message.content)
-                            # Provide a backup question in case of parsing error
-                            st.session_state.current_question = {
-                                "text": "What is a primary advantage of using neural networks?",
-                                "options": [
-                                    "They always require less data than other models",
-                                    "They can automatically learn complex patterns from data",
-                                    "They never overfit",
-                                    "They always train quickly"
-                                ],
-                                "correct": "They can automatically learn complex patterns from data"
-                            }
-                
-                st.rerun()  # Use st.rerun() instead of st.experimental_rerun()
-
-    # Quiz completion
+                    st.session_state.current_question = generate_question(quiz_topic)
+                st.rerun()
     elif st.session_state.quiz_active and st.session_state.question_count >= st.session_state.total_questions:
         st.success(f"Quiz Complete! Your Final Score: {st.session_state.score}/{st.session_state.total_questions}")
-        
-        # Save quiz results to database
         save_quiz_result(
             student_id=student_id,
             student_name=students_data[student_id]["name"],
@@ -366,8 +304,6 @@ elif page == "📝 Take Quiz":
             score=st.session_state.score,
             total_questions=st.session_state.total_questions
         )
-        
-        # Generate feedback based on score
         score_percentage = (st.session_state.score / st.session_state.total_questions) * 100
         if score_percentage >= 80:
             st.balloons()
@@ -376,72 +312,51 @@ elif page == "📝 Take Quiz":
             st.write("👍 Good job! You have a solid grasp of the basics.")
         else:
             st.write("📚 Keep learning! Consider reviewing this topic more thoroughly.")
-        
         if st.button("Restart Quiz"):
             st.session_state.quiz_active = False
             st.rerun()
 
-### 📚 QUIZ HISTORY ###
+# ----------------------------
+# Quiz History Section
+# ----------------------------
 elif page == "📚 Quiz History":
     st.header("📚 Quiz History Dashboard")
-    
-    # Filter options
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        view_option = st.radio("View", ["All Students", "Specific Student"])
-    
-    student_id = None
-    if view_option == "Specific Student":
-        with col2:
-            student_id = st.selectbox("Select Student", list(students_data.keys()))
-            st.write(f"Student: {students_data[student_id]['name']}")
-    
-    # Fetch and display quiz history
-    history_df = get_student_quiz_history(student_id)
-    
-    if not history_df.empty:
-        # Add percentage column
-        history_df['percentage'] = (history_df['score'] / history_df['total_questions'] * 100).round(1)
-        
-        # Display results table
-        st.subheader("📋 Quiz Results")
-        st.dataframe(history_df[['student_name', 'topic', 'score', 'total_questions', 'percentage', 'timestamp']])
-        
-        # Visualization - Performance by Topic
-        st.subheader("📊 Performance by Topic")
-        topic_df = history_df.groupby('topic')[['percentage']].mean().reset_index()
-        
-        fig, ax = plt.subplots(figsize=(10, 6))
-        sns.barplot(x='topic', y='percentage', data=topic_df, ax=ax)
-        plt.title("Average Score by Topic")
-        plt.ylabel("Average Score (%)")
-        plt.xlabel("Topic")
-        plt.xticks(rotation=45)
-        st.pyplot(fig)
-        
-        # Visualization - Performance Over Time
-        if student_id:
-            st.subheader("📈 Performance Over Time")
-            history_df['timestamp'] = pd.to_datetime(history_df['timestamp'])
-            history_df = history_df.sort_values('timestamp')
-            
-            plt.figure(figsize=(10, 6))
-            plt.plot(history_df['timestamp'], history_df['percentage'], marker='o', linestyle='-')
-            plt.title(f"Performance Over Time - {students_data[student_id]['name']}")
-            plt.ylabel("Score (%)")
-            plt.xlabel("Date")
-            plt.grid(True, linestyle='--', alpha=0.7)
+    student_id = st.text_input("Enter Student ID to View History:", "")
+    if student_id:
+        history_df = get_student_quiz_history(student_id)
+        if not history_df.empty:
+            history_df['percentage'] = (history_df['score'] / history_df['total_questions'] * 100).round(1)
+            st.dataframe(history_df[['student_name', 'topic', 'score', 'total_questions', 'percentage', 'timestamp']])
+            st.subheader("📊 Performance by Topic")
+            topic_df = history_df.groupby('topic')[['percentage']].mean().reset_index()
+            fig, ax = plt.subplots(figsize=(10, 6))
+            sns.barplot(x='topic', y='percentage', data=topic_df, ax=ax)
+            plt.title("Average Score by Topic")
+            plt.ylabel("Average Score (%)")
+            plt.xlabel("Topic")
             plt.xticks(rotation=45)
-            st.pyplot(plt)
-    else:
-        st.info("No quiz history available. Take a quiz to see results here.")
+            st.pyplot(fig)
+            if student_id:
+                st.subheader("📈 Performance Over Time")
+                history_df['timestamp'] = pd.to_datetime(history_df['timestamp'])
+                history_df = history_df.sort_values('timestamp')
+                plt.figure(figsize=(10, 6))
+                plt.plot(history_df['timestamp'], history_df['percentage'], marker='o', linestyle='-')
+                plt.title(f"Performance Over Time - {students_data[student_id]['name']}")
+                plt.ylabel("Score (%)")
+                plt.xlabel("Date")
+                plt.grid(True, linestyle='--', alpha=0.7)
+                plt.xticks(rotation=45)
+                st.pyplot(plt)
+        else:
+            st.info("No quiz history available. Take a quiz to see results here.")
 
-### 🧠 AI POWERED HINTS ###
+# ----------------------------
+# AI-Powered Hints Section
+# ----------------------------
 elif page == "🧠 AI-Powered Hints":
     st.header("🧠 Get AI-Powered Hints")
     question_text = st.text_area("Enter your question:")
-    
     if st.button("Get Hint"):
         prompt = f"Provide a hint for the following question: {question_text}"
         response = openai.ChatCompletion.create(
@@ -453,12 +368,13 @@ elif page == "🧠 AI-Powered Hints":
         hint = response.choices[0].message.content.strip()
         st.info(f"💡 Hint: {hint}")
 
-### 🔍 AI PEER ASSESSMENT ###
+# ----------------------------
+# AI Peer Assessment Section
+# ----------------------------
 elif page == "🔍 AI Peer Assessment":
     st.header("🔍 AI-Powered Peer Assessment")
     student_submission = st.text_area("Paste student submission:")
     rubric = {"Concept Understanding": 10, "Implementation": 10, "Analysis": 10, "Clarity": 5, "Creativity": 5}
-    
     if st.button("Generate Peer Review"):
         prompt = f"Assess the following submission using this rubric: {json.dumps(rubric)}\n\nSubmission: {student_submission}"
         response = openai.ChatCompletion.create(
@@ -471,58 +387,48 @@ elif page == "🔍 AI Peer Assessment":
         st.success("✅ AI Peer Review Generated:")
         st.write(review)
 
-### 🔍 AI PEER ASSESSMENT WITH WORD DOCUMENT UPLOAD ###
-### 🔍 AI PEER ASSESSMENT WITH WORD DOCUMENT UPLOAD ###
+# ----------------------------
+# Plagiarism/Reasoning Finder Section
+# ----------------------------
 elif page == "🔍 Plagiarism/Reasoning Finder":
     st.header("🔍 Plagiarism/Reasoning Finder")
     uploaded_file = st.file_uploader("Upload student's document (.docx or .pdf)", type=["docx", "pdf"])
-
     student_submission = ""
     if uploaded_file:
         file_type = uploaded_file.name.split(".")[-1].lower()
-
         if file_type == "docx":
             student_submission = extract_text_from_docx(uploaded_file)
         elif file_type == "pdf":
             student_submission = extract_text_from_pdf(uploaded_file)
-
         st.subheader("📄 Extracted Submission:")
         st.text_area("Extracted Text", student_submission, height=300)
-
     rubric = {"Concept Understanding": 10, "Implementation": 10, "Analysis": 10, "Clarity": 5, "Creativity": 5}
-
     col1, col2 = st.columns(2)
-    
     with col1:
         if st.button("📝 Generate AI Assessment"):
             if student_submission.strip():
                 prompt = f"Assess the following submission based on this rubric: {json.dumps(rubric)}\n\nSubmission:\n{student_submission}"
-
                 response = openai.ChatCompletion.create(
                     model="gpt-4o",
                     messages=[{"role": "system", "content": "You are an AI grading student assignments."},
                               {"role": "user", "content": prompt}],
                     temperature=0.3, max_tokens=500
                 )
-
                 review = response.choices[0].message.content.strip()
                 st.success("✅ AI Feedback Generated:")
                 st.write(review)
             else:
                 st.warning("⚠️ Please upload a valid document.")
-    
     with col2:
         if st.button("🔍 Check for Plagiarism"):
             if student_submission.strip():
                 with st.spinner("Checking plagiarism..."):
-                    # More structured prompt to ensure we get a percentage
                     plagiarism_prompt = (
                         f"Analyze the following document for plagiarism risk. "
                         f"Your response MUST include a clear plagiarism percentage in the first line with this exact format: 'Plagiarism Risk: XX%' "
                         f"(where XX is a number between 0 and 100). Then provide your explanation and analysis below that.\n\n"
                         f"Document:\n{student_submission}"
                     )
-
                     plagiarism_response = openai.ChatCompletion.create(
                         model="gpt-4o",
                         messages=[
@@ -531,22 +437,15 @@ elif page == "🔍 Plagiarism/Reasoning Finder":
                         ],
                         temperature=0.3, max_tokens=400
                     )
-
                     plagiarism_result = plagiarism_response.choices[0].message.content.strip()
-                    
-                    # Extract the percentage for visualization
                     try:
                         if "Plagiarism Risk:" in plagiarism_result:
                             first_line = plagiarism_result.split('\n')[0]
                             percentage_text = first_line.split('Plagiarism Risk:')[1].strip()
                             if '%' in percentage_text:
                                 percentage = float(percentage_text.replace('%', '').strip())
-                                
-                                # Create a progress bar to visualize the plagiarism percentage
                                 st.subheader("Plagiarism Risk Score:")
                                 st.progress(percentage/100)
-                                
-                                # Color-coded display based on risk level
                                 if percentage < 30:
                                     st.success(f"📊 Plagiarism Risk: {percentage}% (Low Risk)")
                                 elif percentage < 60:
@@ -555,121 +454,62 @@ elif page == "🔍 Plagiarism/Reasoning Finder":
                                     st.error(f"📊 Plagiarism Risk: {percentage}% (High Risk)")
                     except Exception as e:
                         st.error(f"Error parsing plagiarism percentage: {str(e)}")
-                    
-                    # Display full analysis
                     st.subheader("📝 Plagiarism Analysis:")
                     st.write(plagiarism_result)
-                    
-                    # Store the result in database if needed
-                    if "current_student_id" in st.session_state and uploaded_file:
-                        try:
-                            conn = init_db()
-                            c = conn.cursor()
-                            # Create document_plagiarism_checks table if it doesn't exist
-                            c.execute('''
-                            CREATE TABLE IF NOT EXISTS document_plagiarism_checks (
-                                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                                student_id TEXT,
-                                filename TEXT,
-                                plagiarism_score REAL,
-                                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-                            )
-                            ''')
-                            
-                            # Try to extract the percentage for database storage
-                            percentage = 0
-                            try:
-                                if "Plagiarism Risk:" in plagiarism_result:
-                                    first_line = plagiarism_result.split('\n')[0]
-                                    percentage_text = first_line.split('Plagiarism Risk:')[1].strip()
-                                    if '%' in percentage_text:
-                                        percentage = float(percentage_text.replace('%', '').strip())
-                            except:
-                                percentage = 0
-                                
-                            # Store the check result
-                            c.execute('''
-                            INSERT INTO document_plagiarism_checks (student_id, filename, plagiarism_score, timestamp)
-                            VALUES (?, ?, ?, ?)
-                            ''', (st.session_state.current_student_id, uploaded_file.name, percentage, datetime.now()))
-                            
-                            conn.commit()
-                            conn.close()
-                        except Exception as e:
-                            st.error(f"Error saving plagiarism check to database: {str(e)}")
+                    # (Optional) Store result in database here if needed.
             else:
                 st.warning("⚠️ Please upload a valid document.")
-### 📂 CODE EVALUATION & PLAGIARISM CHECK ###
+
+# ----------------------------
+# Code Evaluation & Plagiarism Check Section
+# ----------------------------
 elif page == "📂 Code Evaluation & Plagiarism Check":
     st.header("📂 Code Evaluation & Plagiarism Check")
-
     uploaded_code = st.file_uploader("Upload a Python (.py) file", type=["py"])
-    
     if uploaded_code is not None:
-        # Read the uploaded file
         code_content = uploaded_code.getvalue().decode("utf-8")
-        
         st.subheader("📜 Uploaded Code:")
         st.code(code_content, language="python")
-
-        # Syntax Checking
         syntax_error = check_python_syntax(code_content)
         if syntax_error:
             st.error(syntax_error)
         else:
             st.success("✅ No syntax errors found!")
-
-        # AI Code Evaluation
         if st.button("📊 Evaluate Code & Check Plagiarism"):
             with st.spinner("Analyzing Code..."):
                 prompt = f"Analyze the following Python program. Provide:\n1. Correctness Score\n2. Efficiency Score\n3. Readability Score\n4. Plagiarism Risk Score\n5. Suggestions for Improvement\n\nCode:\n{code_content}"
-
                 response = openai.ChatCompletion.create(
                     model="gpt-4o",
                     messages=[{"role": "system", "content": "You are an AI that evaluates Python code for correctness, efficiency, readability, and plagiarism risk."},
                               {"role": "user", "content": prompt}],
                     temperature=0.3, max_tokens=600
                 )
-
                 evaluation_result = response.choices[0].message.content.strip()
                 st.success("✅ AI Evaluation Generated:")
                 st.write(evaluation_result)
-
-        # Enhanced Plagiarism Score Analysis
         if st.button("🔍 Check for Plagiarism"):
             with st.spinner("Checking plagiarism..."):
-                # More structured prompt to ensure we get a percentage
                 plagiarism_prompt = (
                     f"Analyze the following Python code for plagiarism risk. "
                     f"Your response MUST include a clear plagiarism percentage in the first line with this exact format: 'Plagiarism Risk: XX%' "
                     f"(where XX is a number between 0 and 100). Then provide your explanation and analysis below that.\n\n"
                     f"Code:\n{code_content}"
                 )
-
                 plagiarism_response = openai.ChatCompletion.create(
                     model="gpt-4o",
-                    messages=[
-                        {"role": "system", "content": "You are an AI that checks for plagiarism in Python code. Always provide a clear plagiarism percentage in your first line."},
-                        {"role": "user", "content": plagiarism_prompt}
-                    ],
+                    messages=[{"role": "system", "content": "You are an AI that checks for plagiarism in Python code. Always provide a clear plagiarism percentage in your first line."},
+                              {"role": "user", "content": plagiarism_prompt}],
                     temperature=0.3, max_tokens=400
                 )
-
                 plagiarism_result = plagiarism_response.choices[0].message.content.strip()
-                
-                # Extract the percentage for visualization
                 try:
                     if "Plagiarism Risk:" in plagiarism_result:
                         first_line = plagiarism_result.split('\n')[0]
                         percentage_text = first_line.split('Plagiarism Risk:')[1].strip()
                         if '%' in percentage_text:
                             percentage = float(percentage_text.replace('%', '').strip())
-                            
-                            # Create a progress bar to visualize the plagiarism percentage
                             st.subheader("Plagiarism Risk Score:")
                             st.progress(percentage/100)
-                            
-                            # Color-coded display based on risk level
                             if percentage < 30:
                                 st.success(f"📊 Plagiarism Risk: {percentage}% (Low Risk)")
                             elif percentage < 60:
@@ -678,45 +518,5 @@ elif page == "📂 Code Evaluation & Plagiarism Check":
                                 st.error(f"📊 Plagiarism Risk: {percentage}% (High Risk)")
                 except Exception as e:
                     st.error(f"Error parsing plagiarism percentage: {str(e)}")
-                
-                # Display full analysis
                 st.subheader("📝 Plagiarism Analysis:")
                 st.write(plagiarism_result)
-                
-                # Store the result in database
-                if "current_student_id" in st.session_state:
-                    try:
-                        conn = init_db()
-                        c = conn.cursor()
-                        # Create plagiarism_checks table if it doesn't exist
-                        c.execute('''
-                        CREATE TABLE IF NOT EXISTS plagiarism_checks (
-                            id INTEGER PRIMARY KEY AUTOINCREMENT,
-                            student_id TEXT,
-                            filename TEXT,
-                            plagiarism_score REAL,
-                            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-                        )
-                        ''')
-                        
-                        # Try to extract the percentage for database storage
-                        percentage = 0
-                        try:
-                            if "Plagiarism Risk:" in plagiarism_result:
-                                first_line = plagiarism_result.split('\n')[0]
-                                percentage_text = first_line.split('Plagiarism Risk:')[1].strip()
-                                if '%' in percentage_text:
-                                    percentage = float(percentage_text.replace('%', '').strip())
-                        except:
-                            percentage = 0
-                            
-                        # Store the check result
-                        c.execute('''
-                        INSERT INTO plagiarism_checks (student_id, filename, plagiarism_score, timestamp)
-                        VALUES (?, ?, ?, ?)
-                        ''', (st.session_state.current_student_id, uploaded_code.name, percentage, datetime.now()))
-                        
-                        conn.commit()
-                        conn.close()
-                    except Exception as e:
-                        st.error(f"Error saving plagiarism check to database: {str(e)}")
