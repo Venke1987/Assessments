@@ -16,7 +16,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 openai.api_key = os.getenv("OPENAI_API_KEY")
-print(f"Your API Key is: {openai.api_key}")
 
 # Initialize Database
 def init_db():
