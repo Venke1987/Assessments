@@ -12,6 +12,7 @@ import ast  # For checking Python syntax
 import io  # For handling uploaded files
 import sqlite3
 import os
+from io import BytesIO
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -208,7 +209,8 @@ init_db()
 st.title("🚀 Generative AI-Based Students Assessment System")
 st.sidebar.header("Navigation")
 page = st.sidebar.radio("Go to", ["📊 Dashboard", "📝 Take Quiz", "📚 Quiz History", "📖 AI-Powered Storytelling", "🧠 AI-Powered Hints", "🔍 AI Peer Assessment", "🔍 Plagiarism/Reasoning Finder", "📂 Code Evaluation & Plagiarism Check"])
-
+page = st.sidebar.radio("Go to", ["📊 Dashboard", "📝 Take Quiz", "📚 Quiz History", "📖 AI-Powered Storytelling", "🧠 AI-Powered Hints", "🔍 AI Peer Assessment", "🔍 Plagiarism/Reasoning Finder", "📂 Code Evaluation & Plagiarism Check", "📄 AI-Based LOR Generator"
+])
 ### 📊 CLASS PERFORMANCE DASHBOARD ###
 if page == "📊 Dashboard":
     st.header("📊 Class Performance Dashboard")
@@ -783,3 +785,78 @@ elif page == "📂 Code Evaluation & Plagiarism Check":
                         conn.close()
                     except Exception as e:
                         st.error(f"Error saving plagiarism check to database: {str(e)}")
+### 📄 AI-Based Letter of Recommendation (LOR) Generator ###
+if page == "📄 AI-Based LOR Generator":
+    st.header("📄 AI-Powered Letter of Recommendation (LOR) Generator")
+
+    # Select Student
+    student_id = st.selectbox("Select Student ID", list(students_data.keys()))
+    student = students_data[student_id]
+
+    st.subheader(f"Student: {student['name']} ({student['department']})")
+    st.write(f"**CGPA:** {student['cgpa']}")
+
+    # Faculty Input: Purpose of LOR
+    lor_purpose = st.radio("Purpose of LOR", ["Higher Studies", "Internship", "Job Application"])
+    skills = st.text_area("Enter key skills (comma-separated)", "Machine Learning, Research, Leadership")
+    achievements = st.text_area("Enter achievements (comma-separated)", "Won AI Hackathon, Published IEEE Paper")
+
+    # Generate LOR
+    if st.button("Generate LOR"):
+        with st.spinner("Generating Letter of Recommendation..."):
+            prompt = f"""
+            Write a professional Letter of Recommendation (LOR) for a student. 
+            The student details are:
+            - Name: {student['name']}
+            - Department: {student['department']}
+            - CGPA: {student['cgpa']}
+            - Purpose: {lor_purpose}
+            - Skills: {skills}
+            - Achievements: {achievements}
+
+            The LOR should be formal, structured, and highlight the student's strengths, academic achievements, and suitability for {lor_purpose}.
+            """
+
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "system", "content": "You are an AI that writes professional letters of recommendation."},
+                          {"role": "user", "content": prompt}],
+                temperature=0.6,
+                max_tokens=400
+            )
+
+            st.session_state.lor_text = response.choices[0].message.content.strip()
+            st.success("✅ Letter of Recommendation Generated!")
+            st.text_area("Generated LOR", st.session_state.lor_text, height=300)
+
+    # Refinement System
+    if "lor_text" in st.session_state:
+        refine_prompt = st.text_area("🔄 Enter improvements to refine the LOR (optional)")
+
+        if st.button("Refine LOR"):
+            with st.spinner("Refining LOR..."):
+                refine_request = f"Refine and improve the following LOR based on this feedback: {refine_prompt}\n\n{st.session_state.lor_text}"
+
+                refined_response = client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[{"role": "system", "content": "You refine and improve letters of recommendation based on feedback."},
+                              {"role": "user", "content": refine_request}],
+                    temperature=0.6,
+                    max_tokens=400
+                )
+
+                st.session_state.lor_text = refined_response.choices[0].message.content.strip()
+                st.success("✅ LOR Refined!")
+                st.text_area("Refined LOR", st.session_state.lor_text, height=300)
+
+    # Save and Download LOR as Word Document
+    if "lor_text" in st.session_state:
+        doc = docx.Document()
+        doc.add_paragraph(st.session_state.lor_text)
+        buffer = BytesIO()
+        doc.save(buffer)
+        buffer.seek(0)
+
+        st.download_button(label="📥 Download LOR (Word)", data=buffer, file_name="LOR.docx",
+                           mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+
