@@ -807,7 +807,7 @@ if page == "📄 AI-Based LOR Generator":
             Write a professional Letter of Recommendation (LOR) for a student. 
             The student details are:
             - Name: {student['name']}
-            - Department: {student['department']}
+            - Department: {student.get('department', 'B.Tech. Robotics & Artificial Intelligence, Third Year')}
             - CGPA: {student['cgpa']}
             - Purpose: {lor_purpose}
             - Skills: {skills}
