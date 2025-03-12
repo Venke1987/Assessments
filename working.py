@@ -808,11 +808,11 @@ if page == "📄 AI-Based LOR Generator":
             The student details are:
             - Name: {student['name']}
             - Department: {student.get('department', 'B.Tech. Robotics & Artificial Intelligence, Third Year')}
-            - CGPA: {student['cgpa']}
-            - Purpose: {lor_purpose}
-            - Skills: {skills}
-            - Achievements: {achievements}
-
+            - CGPA: {student.get('cgpa', 'Not Available')}
+            - Purpose: {lor_purpose if lor_purpose else "Not Provided"}
+            - Skills: {skills if skills else "Not Provided"}
+            - Achievements: {achievements if achievements else "Not Provided"}
+  
             The LOR should be formal, structured, and highlight the student's strengths, academic achievements, and suitability for {lor_purpose}.
             """
 
