@@ -793,7 +793,7 @@ if page == "📄 AI-Based LOR Generator":
     student = students_data[student_id]
 
     st.subheader(f"Student: {student['name']} | {student.get('department', 'B.Tech. Robotics & Artificial Intelligence')}, {student.get('year', 'Third Year')}")
-    st.write(f"**CGPA:** {student['cgpa']}")
+    st.write(f"**CGPA:** {student.get('cgpa', 'Not Available')}")
 
     # Faculty Input: Purpose of LOR
     lor_purpose = st.radio("Purpose of LOR", ["Higher Studies", "Internship", "Job Application"])
