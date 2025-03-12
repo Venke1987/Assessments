@@ -525,7 +525,7 @@ elif page == "🔍 Plagiarism/Reasoning Finder":
                         f"Document:\n{student_submission}"
                     )
 
-                    plagiarism_response = openai.ChatCompletion.create(
+                    plagiarism_response = client.chat.completions.create(
                         model="gpt-4o",
                         messages=[
                             {"role": "system", "content": "You are an AI that checks for plagiarism in academic work. Always provide a clear plagiarism percentage in your first line."},
