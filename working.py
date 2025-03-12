@@ -207,7 +207,7 @@ init_db()
 # Streamlit UI
 st.title("🚀 Generative AI-Based Students Assessment System")
 st.sidebar.header("Navigation")
-page = st.sidebar.radio("Go to", ["📊 Dashboard", "📝 Take Quiz", "📚 Quiz History", "🧠 AI-Powered Hints", "🔍 AI Peer Assessment", "🔍 Plagiarism/Reasoning Finder", "📂 Code Evaluation & Plagiarism Check"])
+page = st.sidebar.radio("Go to", ["📊 Dashboard", "📝 Take Quiz", "📚 Quiz History", "📖 AI-Powered Storytelling", "🧠 AI-Powered Hints", "🔍 AI Peer Assessment", "🔍 ", "Plagiarism/Reasoning Finder", "📂 Code Evaluation & Plagiarism Check"])
 
 ### 📊 CLASS PERFORMANCE DASHBOARD ###
 if page == "📊 Dashboard":
@@ -242,6 +242,67 @@ if page == "📊 Dashboard":
     plt.ylabel("Proficiency Score")
     plt.title("Student Progress")
     st.pyplot(plt)
+if page == "📖 AI-Powered Storytelling":
+    st.header("📖 AI-Powered Conversational Storytelling")
+
+    # User input for story topic
+    user_topic = st.text_input("Enter a topic for the story (e.g., AI in Space, Lost Treasure, Cybersecurity):")
+
+    if "story_conversation" not in st.session_state:
+        st.session_state.story_conversation = []
+
+    if st.button("Generate Story"):
+        if user_topic.strip():
+            # OpenAI API call to generate the first part of the story
+            prompt = (
+                f"You are a friendly AI storyteller. Create a fun and engaging story based on the topic: '{user_topic}'. "
+                f"Format the story like a chatbot conversation where an AI and a human character interact."
+            )
+
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "system", "content": "You are a storytelling AI."},
+                          {"role": "user", "content": prompt}],
+                temperature=0.8,
+                max_tokens=400
+            )
+
+            story_text = response.choices[0].message.content.strip()
+
+            # Add story to session history
+            st.session_state.story_conversation.append({"role": "AI Storyteller", "content": story_text})
+
+    # Display the chatbot-style story conversation
+    for message in st.session_state.story_conversation:
+        if message["role"] == "AI Storyteller":
+            st.markdown(f"**🤖 AI Storyteller:** {message['content']}")
+
+    # Allow users to add their own input to progress the story
+    user_reply = st.text_input("Continue the story... (Optional)")
+
+    if st.button("Continue"):
+        if user_reply.strip():
+            follow_up_prompt = (
+                f"Continue the story based on the user's response: '{user_reply}'. "
+                f"Keep the conversational tone between the AI storyteller and the characters."
+            )
+
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "system", "content": "You are a storytelling AI."},
+                          {"role": "user", "content": follow_up_prompt}],
+                temperature=0.8,
+                max_tokens=300
+            )
+
+            follow_up_story = response.choices[0].message.content.strip()
+
+            # Append to conversation history
+            st.session_state.story_conversation.append({"role": "User", "content": user_reply})
+            st.session_state.story_conversation.append({"role": "AI Storyteller", "content": follow_up_story})
+
+            # Refresh page
+            st.rerun()
 
 ### 📝 DYNAMIC QUIZ GENERATION ###
 elif page == "📝 Take Quiz":
