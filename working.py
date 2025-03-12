@@ -17,6 +17,7 @@ load_dotenv()
 
 # openai.api_key = os.getenv("OPENAI_API_KEY")
 openai.api_key = st.secrets["OPENAI_API_KEY"]
+client = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])  # Use Streamlit Secrets API Key
 
 # Initialize Database
 def init_db():
