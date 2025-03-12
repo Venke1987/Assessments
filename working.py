@@ -208,7 +208,6 @@ init_db()
 # Streamlit UI
 st.title("🚀 Generative AI-Based Students Assessment System")
 st.sidebar.header("Navigation")
-page = st.sidebar.radio("Go to", ["📊 Dashboard", "📝 Take Quiz", "📚 Quiz History", "📖 AI-Powered Storytelling", "🧠 AI-Powered Hints", "🔍 AI Peer Assessment", "🔍 Plagiarism/Reasoning Finder", "📂 Code Evaluation & Plagiarism Check"])
 page = st.sidebar.radio("Go to", ["📊 Dashboard", "📝 Take Quiz", "📚 Quiz History", "📖 AI-Powered Storytelling", "🧠 AI-Powered Hints", "🔍 AI Peer Assessment", "🔍 Plagiarism/Reasoning Finder", "📂 Code Evaluation & Plagiarism Check", "📄 AI-Based LOR Generator"
 ])
 ### 📊 CLASS PERFORMANCE DASHBOARD ###
