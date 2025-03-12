@@ -446,7 +446,7 @@ elif page == "🧠 AI-Powered Hints":
     
     if st.button("Get Hint"):
         prompt = f"Provide a hint for the following question: {question_text}"
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-4o",
             messages=[{"role": "system", "content": "You are an AI assistant providing hints."},
                       {"role": "user", "content": prompt}],
@@ -463,7 +463,7 @@ elif page == "🔍 AI Peer Assessment":
     
     if st.button("Generate Peer Review"):
         prompt = f"Assess the following submission using this rubric: {json.dumps(rubric)}\n\nSubmission: {student_submission}"
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-4o",
             messages=[{"role": "system", "content": "You are an AI generating structured peer assessments."},
                       {"role": "user", "content": prompt}],
@@ -500,7 +500,7 @@ elif page == "🔍 Plagiarism/Reasoning Finder":
             if student_submission.strip():
                 prompt = f"Assess the following submission based on this rubric: {json.dumps(rubric)}\n\nSubmission:\n{student_submission}"
 
-                response = openai.ChatCompletion.create(
+                response = client.chat.completions.create(
                     model="gpt-4o",
                     messages=[{"role": "system", "content": "You are an AI grading student assignments."},
                               {"role": "user", "content": prompt}],
@@ -626,7 +626,7 @@ elif page == "📂 Code Evaluation & Plagiarism Check":
             with st.spinner("Analyzing Code..."):
                 prompt = f"Analyze the following Python program. Provide:\n1. Correctness Score\n2. Efficiency Score\n3. Readability Score\n4. Plagiarism Risk Score\n5. Suggestions for Improvement\n\nCode:\n{code_content}"
 
-                response = openai.ChatCompletion.create(
+                response = client.chat.completions.create(
                     model="gpt-4o",
                     messages=[{"role": "system", "content": "You are an AI that evaluates Python code for correctness, efficiency, readability, and plagiarism risk."},
                               {"role": "user", "content": prompt}],
@@ -648,7 +648,7 @@ elif page == "📂 Code Evaluation & Plagiarism Check":
                     f"Code:\n{code_content}"
                 )
 
-                plagiarism_response = openai.ChatCompletion.create(
+                plagiarism_response = client.chat.completions.create(
                     model="gpt-4o",
                     messages=[
                         {"role": "system", "content": "You are an AI that checks for plagiarism in Python code. Always provide a clear plagiarism percentage in your first line."},
