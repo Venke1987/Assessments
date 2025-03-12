@@ -319,7 +319,7 @@ elif page == "📝 Take Quiz":
                     prompt = f"Create a multiple-choice question about {quiz_topic} with 4 options and indicate the correct answer. Format your response as JSON with these fields: 'text' (the question), 'options' (array of 4 choices), and 'correct' (the correct answer text)."
                     
                     with st.spinner("Generating next question..."):
-                        response = openai.ChatCompletion.create(
+                        response = client.chat.completions.create(
                             model="gpt-4o",
                             messages=[
                                 {"role": "system", "content": "You are an AI that generates educational quiz questions. Return responses in valid JSON format only."},
