@@ -792,7 +792,7 @@ if page == "📄 AI-Based LOR Generator":
     student_id = st.selectbox("Select Student ID", list(students_data.keys()))
     student = students_data[student_id]
 
-    st.subheader(f"Student: {student['name']} ({student['department']})")
+    st.subheader(f"Student: {student['name']} | {student.get('department', 'B.Tech. Robotics & Artificial Intelligence')}, {student.get('year', 'Third Year')}")
     st.write(f"**CGPA:** {student['cgpa']}")
 
     # Faculty Input: Purpose of LOR
