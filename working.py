@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -14,7 +15,9 @@ import sqlite3
 import os
 from io import BytesIO
 from dotenv import load_dotenv
-
+import xgboost as xgb
+import numpy as np
+import cv2
 # ---------------- NEW IMPORTS (PLACEHOLDERS) ----------------
 # You may need to install these libraries if you actually want to use them
 # !pip install opencv-python face_recognition xgboost scikit-learn
@@ -341,7 +344,7 @@ elif page == "📖 AI-Powered Storytelling":
 
             st.session_state.story_conversation.append({"role": "User", "content": user_reply})
             st.session_state.story_conversation.append({"role": "AI Storyteller", "content": follow_up_story})
-            st.experimental_rerun()
+            st.rerun()
 
 # ---------------- PAGE: TAKE QUIZ ----------------
 elif page == "📝 Take Quiz":
@@ -387,7 +390,7 @@ elif page == "📝 Take Quiz":
                         response_text = response_text.split("```")[1].split("```")[0].strip()
                     
                     st.session_state.current_question = json.loads(response_text)
-                    st.experimental_rerun()
+                    st.rerun()
                 except Exception as e:
                     st.error(f"Error generating question: {str(e)}")
                     st.write("Response received:", response.choices[0].message.content)
@@ -448,7 +451,7 @@ elif page == "📝 Take Quiz":
                                 "correct": "They can automatically learn complex patterns from data"
                             }
                 
-                st.experimental_rerun()
+                st.rerun()
 
     elif st.session_state.quiz_active and st.session_state.question_count >= st.session_state.total_questions:
         st.success(f"Quiz Complete! Your Final Score: {st.session_state.score}/{st.session_state.total_questions}")
@@ -472,7 +475,7 @@ elif page == "📝 Take Quiz":
         
         if st.button("Restart Quiz"):
             st.session_state.quiz_active = False
-            st.experimental_rerun()
+            st.rerun()
 
 # ---------------- PAGE: QUIZ HISTORY ----------------
 elif page == "📚 Quiz History":
@@ -947,7 +950,7 @@ elif page == "📈 ML Performance Tracking & Prediction":
 
             # Placeholder XGBoost regressor
             model = xgb.XGBRegressor(n_estimators=10, use_label_encoder=False)
-            model.fit(X_train, y_train, eval_metric='rmse', verbose=False)
+            model.fit(X_train, y_train, eval_set=[(X_test, y_test)], eval_metric='logloss')
             preds = model.predict(X_test)
             score = r2_score(y_test, preds)
             st.success(f"Sample XGBoost R2 Score: {score:.2f}")
@@ -978,21 +981,28 @@ elif page == "🔒 AI Proctoring & Integrity Checks":
     )
 
     # Placeholder face recognition
+    # File uploader
     face_image = st.file_uploader("Upload a photo for face verification", type=["png", "jpg", "jpeg"])
+
     if face_image is not None:
-        file_bytes = np.asarray(bytearray(face_image.read()), dtype=np.uint8)
         try:
+            # Read file bytes properly
+            file_bytes = np.asarray(bytearray(face_image.read()), dtype=np.uint8)
+
+            # Decode image from memory buffer
             cv_image = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
-            st.image(cv_image, caption="Uploaded Face Image", use_column_width=True)
+        
+            if cv_image is not None:
+                st.image(cv_image, caption="Uploaded Face Image", use_column_width=True)
 
-            if st.button("Run Face Recognition"):
-                st.info("Performing face recognition... (placeholder)")
-                # You would load a known face embedding, compare with uploaded image, etc.
-                # e.g. face_recognition.compare_faces(known_encodings, face_encoding)
-                st.success("Identity verified with high confidence. (Placeholder result)")
+                if st.button("Run Face Recognition"):
+                    st.info("Performing face recognition... (placeholder)")
+                    st.success("Identity verified with high confidence. (Placeholder result)")
+            else:
+                st.error("Error: Could not decode the image. Please try a different file.")
         except Exception as e:
-            st.error(f"Error reading image: {str(e)}")
-
+            st.error(f"Error processing image: {str(e)}")
+        
     # Placeholder for eye tracking or behavior analysis
     st.write("For advanced proctoring (eye tracking, behavior analysis), you'd typically need a live camera feed.")
     st.write("Below is just a placeholder demonstration.")
