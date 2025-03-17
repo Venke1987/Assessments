@@ -7,3 +7,11 @@ openai
 pymupdf
 python-docx
 load_dotenv
+BytesIO
+sqlite3
+os
+ast
+docx
+fitz
+datetime
+json
