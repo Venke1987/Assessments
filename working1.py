@@ -229,6 +229,22 @@ if page == "🔍 Plagiarism/Reasoning Finder":
             file_name=f"{student_id}_Assessment_Report.pdf",
             mime="application/pdf"
         )
+        # Save assessment to quiz history
+        conn = init_db()
+        c = conn.cursor()
+        c.execute("""
+            INSERT INTO quiz_results (student_id, student_name, topic, score, total_questions)
+            VALUES (?, ?, ?, ?, ?)
+        """, (
+            student_id,
+            student_id,  # Replace with actual name if available
+            "MEC102 Report",
+            total_score,
+            50  # or sum of max rubric values
+        ))
+        conn.commit()
+        conn.close()
+
 elif page == "📈 Student Analytics":
     st.header("📈 Student Performance Analytics")
 
