@@ -243,26 +243,26 @@ def clean_text(text):
     """Remove non-ASCII characters and normalize the text."""
     return unicodedata.normalize('NFKD', text).encode('ascii', 'ignore').decode('ascii')
 
-if st.button("📤 Export PDF Report"):
-    buffer = BytesIO()
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", size=12)
+    if st.button("📤 Export PDF Report"):
+        buffer = BytesIO()
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Arial", size=12)
 
-    # Clean the contents before adding
-    ai_feedback = clean_text(st.session_state.get("ai_assessment", "N/A"))
-    plagiarism_result = clean_text(st.session_state.get("llm_plagiarism", "N/A"))
+        # Clean the contents before adding
+        ai_feedback = clean_text(st.session_state.get("ai_assessment", "N/A"))
+        plagiarism_result = clean_text(st.session_state.get("llm_plagiarism", "N/A"))
 
-    pdf.multi_cell(0, 10, "AI Assessment\n" + ai_feedback)
-    pdf.ln()
-    pdf.multi_cell(0, 10, "LLM Plagiarism\n" + plagiarism_result)
-    pdf.ln()
-    pdf.multi_cell(0, 10, "Local Report Similarity\n")
-    for fname, score in st.session_state.get("local_similarity", {}).items():
-        pdf.cell(0, 10, f"{fname}: {score}", ln=True)
+        pdf.multi_cell(0, 10, "AI Assessment\n" + ai_feedback)
+        pdf.ln()
+        pdf.multi_cell(0, 10, "LLM Plagiarism\n" + plagiarism_result)
+        pdf.ln()
+        pdf.multi_cell(0, 10, "Local Report Similarity\n")
+        for fname, score in st.session_state.get("local_similarity", {}).items():
+            pdf.cell(0, 10, f"{fname}: {score}", ln=True)
 
-    pdf.output(buffer)
-    st.download_button("📥 Download Styled Report", data=buffer.getvalue(), file_name="Assessment_Report.pdf")
+        pdf.output(buffer)
+        st.download_button("📥 Download Styled Report", data=buffer.getvalue(), file_name="Assessment_Report.pdf")
 
 elif page == "📈 Student Analytics":
     st.header("📈 Student Performance Analytics")
