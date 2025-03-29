@@ -42,7 +42,9 @@ def authenticate_user():
 
 if not st.session_state.authenticated:
     authenticate_user()
-    st.stop()
+    if not st.session_state.authenticated:
+        st.stop()
+
 
 # --- Part 2: DB & Extraction Utilities ---
 def init_db():
