@@ -206,7 +206,7 @@ if "score" not in st.session_state:
 init_db()
 
 # Streamlit UI
-st.title("🚀 Generative AI-Based Students Assessment System")
+st.title("🚀 Generative AI-Based MEC102 Engineering Design Project Report Assessment System")
 st.sidebar.header("Navigation")
 page = st.sidebar.radio("Go to", ["📊 Dashboard", "🔍 Plagiarism/Reasoning Finder"])
 ### 📊 CLASS PERFORMANCE DASHBOARD ###
