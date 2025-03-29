@@ -280,3 +280,21 @@ elif page == "📊 Dashboard":
         st.subheader("Top Performing Students")
         top_students = avg_score.sort_values("score", ascending=False).head(5)
         st.table(top_students.rename(columns={"score": "Average Score"}))
+# 🧪 TEMPORARY: Add dummy quiz history for testing
+if "seeded" not in st.session_state:
+    st.session_state.seeded = True
+    conn = init_db()
+    c = conn.cursor()
+    sample_data = [
+        ("SEEE001", "Adhithya V", "Edge AI", 8, 10),
+        ("SEEE001", "Adhithya V", "Fuzzy Logic", 7, 10),
+        ("SEEE010", "Dodda Sri Pujitha", "Edge AI", 9, 10),
+        ("SEEE010", "Dodda Sri Pujitha", "Fuzzy Logic", 8, 10),
+        ("SEEE011", "Gowtham", "AI Ethics", 6, 10),
+    ]
+    for student_id, student_name, topic, score, total_q in sample_data:
+        c.execute("INSERT INTO quiz_results (student_id, student_name, topic, score, total_questions) VALUES (?, ?, ?, ?, ?)",
+                  (student_id, student_name, topic, score, total_q))
+    conn.commit()
+    conn.close()
+    st.success("Dummy data seeded! Refresh the app to view analytics.")
