@@ -193,8 +193,9 @@ if page == "🔍 Plagiarism/Reasoning Finder":
         for fname, score in st.session_state.get("local_similarity", {}).items():
             pdf.cell(0, 10, f"{fname}: {score}", ln=True)
 
-        pdf.output(buffer)
-        st.download_button("📥 Download Styled Report", data=buffer.getvalue(), file_name="Assessment_Report.pdf")
+        pdf_bytes = pdf.output(dest='S').encode('latin1')
+        st.download_button("📥 Download Styled Report", data=pdf_bytes, file_name="Assessment_Report.pdf")
+
 
 # --- Page: Student Analytics ---
 elif page == "📈 Student Analytics":
