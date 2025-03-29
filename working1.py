@@ -229,3 +229,54 @@ if page == "🔍 Plagiarism/Reasoning Finder":
             file_name=f"{student_id}_Assessment_Report.pdf",
             mime="application/pdf"
         )
+elif page == "📈 Student Analytics":
+    st.header("📈 Student Performance Analytics")
+
+    df = get_student_quiz_history()
+    if df.empty:
+        st.warning("No quiz history available.")
+    else:
+        student_ids = df['student_id'].unique().tolist()
+        selected_id = st.selectbox("Select Student ID", student_ids)
+
+        student_df = df[df['student_id'] == selected_id]
+        student_name = student_df['student_name'].iloc[0]
+        st.subheader(f"Performance Analytics for: {student_name} ({selected_id})")
+
+        # Trend chart
+        student_df["timestamp"] = pd.to_datetime(student_df["timestamp"])
+        student_df = student_df.sort_values("timestamp")
+        st.line_chart(student_df.set_index("timestamp")[["score"]])
+
+        # Table
+        st.dataframe(student_df)
+
+        # Summary stats
+        st.markdown("### Summary")
+        st.write(f"**Total Quizzes Attempted**: {len(student_df)}")
+        st.write(f"**Average Score**: {student_df['score'].mean():.2f}")
+        st.write(f"**Best Score**: {student_df['score'].max()}")
+        st.write(f"**Most Recent Topic**: {student_df['topic'].iloc[-1]}")
+
+elif page == "📊 Dashboard":
+    st.header("📊 Class-Wide Dashboard")
+    df = get_student_quiz_history()
+
+    if df.empty:
+        st.info("No quiz data available.")
+    else:
+        st.subheader("Average Scores per Student")
+        avg_score = df.groupby("student_id")["score"].mean().reset_index()
+        st.bar_chart(avg_score.set_index("student_id"))
+
+        st.subheader("Quiz Topic Distribution")
+        topic_counts = df["topic"].value_counts()
+        fig, ax = plt.subplots()
+        sns.barplot(x=topic_counts.values, y=topic_counts.index, ax=ax)
+        ax.set_xlabel("Number of Quizzes")
+        ax.set_ylabel("Topic")
+        st.pyplot(fig)
+
+        st.subheader("Top Performing Students")
+        top_students = avg_score.sort_values("score", ascending=False).head(5)
+        st.table(top_students.rename(columns={"score": "Average Score"}))
