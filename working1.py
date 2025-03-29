@@ -9,8 +9,8 @@ import json
 from datetime import datetime
 import fitz  # PyMuPDF for PDFs
 import docx  # For Word document handling
-import ast  # For checking Python syntax
-import io  # For handling uploaded files
+import ast
+import io
 import sqlite3
 import os
 from io import BytesIO
@@ -23,10 +23,10 @@ import re
 
 # Load environment variables
 load_dotenv()
+
 openai.api_key = st.secrets["OPENAI_API_KEY"]
 client = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
-# Faculty login
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 
@@ -44,7 +44,6 @@ if not st.session_state.authenticated:
     if not st.session_state.authenticated:
         st.stop()
 
-# --- DB & Extraction Utilities ---
 def init_db():
     conn = sqlite3.connect('student_quiz_history.db')
     c = conn.cursor()
@@ -105,36 +104,19 @@ def compute_local_plagiarism_scores(student_text, folder_path="local_reports"):
                 similarities[fname] = "Error"
     return similarities
 
-def clean_text(text):
-    """Normalize to ASCII and remove emojis or unsupported characters."""
-    if not text:
-        return ""
-    text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
-    emoji_pattern = re.compile("["
-                           u"\U0001F600-\U0001F64F"  # emoticons
-                           u"\U0001F300-\U0001F5FF"  # symbols & pictographs
-                           u"\U0001F680-\U0001F6FF"  # transport & map symbols
-                           u"\U0001F1E0-\U0001F1FF"  # flags
-                           "]+", flags=re.UNICODE)
-    return emoji_pattern.sub(r'', text)
-
-# --- Streamlit UI ---
 st.title("🚀 Generative AI-Based MEC102 Engineering Design Report Assessment")
 st.sidebar.header("Navigation")
 page = st.sidebar.radio("Go to", ["📊 Dashboard", "🔍 Plagiarism/Reasoning Finder", "📈 Student Analytics"])
 
-# Dummy student data
-students_data = {
-    "SEEE001": {"name": "Adhithya V"},
-    "SEEE002": {"name": "Akety Manjunath"},
-    "SEEE003": {"name": "Aravind S"}
-}
+def clean_text(text):
+    text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
+    emoji_pattern = re.compile("[\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF\U0001F1E0-\U0001F1FF]+", flags=re.UNICODE)
+    return emoji_pattern.sub(r'', text)
 
 if page == "🔍 Plagiarism/Reasoning Finder":
     st.header("📄 Upload and Assess Report")
     uploaded_file = st.file_uploader("Upload student's report (.docx or .pdf)", type=["docx", "pdf"])
-    student_id = st.text_input("Enter Student ID", value="SEEE001")
-
+    student_id = st.text_input("Enter Student ID", key="student_id_input", value="SEEE001")
     ai_assessment = ""
     llm_plagiarism = ""
     local_similarities = {}
@@ -143,15 +125,16 @@ if page == "🔍 Plagiarism/Reasoning Finder":
         ext = uploaded_file.name.split('.')[-1].lower()
         student_text = extract_text_from_pdf(uploaded_file) if ext == "pdf" else extract_text_from_docx(uploaded_file)
 
-        rubric = st.text_area("✏️ Customize AI Feedback Rubric (JSON format)", value=json.dumps({
+        rubric_json = json.dumps({
             "Concept Understanding": 10,
             "Implementation": 10,
             "Analysis": 10,
             "Clarity": 5,
             "Creativity": 5
-        }, indent=2), height=150)
+        }, indent=2)
 
-        st.session_state["rubric"] = rubric
+        st.session_state["rubric_json"] = rubric_json
+        rubric = st.text_area("✏️ Customize AI Feedback Rubric (JSON format)", value=rubric_json, height=150)
 
         col1, col2, col3 = st.columns(3)
 
@@ -194,70 +177,55 @@ if page == "🔍 Plagiarism/Reasoning Finder":
                     st.write(f"📄 {doc}: {score}")
 
     if st.button("📤 Export PDF Report"):
-        buffer = BytesIO()
+        ai_feedback = clean_text(st.session_state.get("ai_assessment", "Not available"))
+        plagiarism_result = clean_text(st.session_state.get("llm_plagiarism", "Not available"))
+        rubric_dict = json.loads(st.session_state.get("rubric_json", json.dumps({
+            "Concept Understanding": 10,
+            "Implementation": 10,
+            "Analysis": 10,
+            "Clarity": 5,
+            "Creativity": 5
+        })))
+        local_similarity = st.session_state.get("local_similarity", {})
+        total_score = sum(rubric_dict.values())
+
         pdf = FPDF()
         pdf.add_page()
         pdf.set_font("Arial", size=12)
 
         logo_path = "sastra_logo.png"
         if os.path.exists(logo_path):
-            pdf.image(logo_path, x=10, y=8, w=30)
-            pdf.ln(20)
+            pdf.image(logo_path, x=80, y=8, w=50)
+            pdf.ln(30)
 
-        student_name = students_data.get(student_id, {}).get("name", "Unknown")
-        pdf.set_font("Arial", 'B', size=14)
-        pdf.cell(0, 10, f"Assessment Report - {student_name} ({student_id})", ln=True)
-        pdf.ln()
+        pdf.set_font("Arial", 'B', 14)
+        pdf.cell(0, 10, f"Assessment Report for Student ID: {student_id}", ln=True, align='C')
+        pdf.ln(10)
 
-        rubric_dict = json.loads(st.session_state.get("rubric", "{}"))
-        rubric_text = "\nRubric Breakdown:\n"
-        total_score = 0
-        for criterion, score in rubric_dict.items():
-            rubric_text += f"• {criterion}: {score}\n"
-            total_score += score
-        rubric_text += f"\nTotal Score: {total_score}/40\n"
+        pdf.set_font("Arial", '', 12)
+        pdf.cell(0, 10, "Rubric-Based Evaluation:", ln=True)
+        for k, v in rubric_dict.items():
+            pdf.cell(0, 10, f"- {k}: {v}/10", ln=True)
+        pdf.cell(0, 10, f"Total Score: {total_score}/40", ln=True)
+        pdf.ln(10)
 
-        ai_feedback = clean_text(st.session_state.get("ai_assessment", "N/A"))
-        plagiarism_result = clean_text(st.session_state.get("llm_plagiarism", "N/A"))
+        pdf.multi_cell(0, 10, f"AI Assessment:\n{ai_feedback}")
+        pdf.ln(5)
+        pdf.multi_cell(0, 10, f"LLM-Based Plagiarism Result:\n{plagiarism_result}")
+        pdf.ln(5)
 
-        pdf.set_font("Arial", size=12)
-        pdf.multi_cell(0, 10, rubric_text)
-        pdf.ln()
-        pdf.multi_cell(0, 10, "AI Assessment\n" + ai_feedback)
-        pdf.ln()
-        pdf.multi_cell(0, 10, "LLM Plagiarism\n" + plagiarism_result)
-        pdf.ln()
-
-        pdf.multi_cell(0, 10, "Local Report Similarity")
-        for fname, score in st.session_state.get("local_similarity", {}).items():
+        pdf.cell(0, 10, "Local Report Similarity:", ln=True)
+        for fname, score in local_similarity.items():
             pdf.cell(0, 10, f"{fname}: {score}", ln=True)
 
-        pdf_file_name = f"{student_id}_Assessment_Report.pdf"
-        pdf.output(buffer, 'S')  # Output as string to stream
         pdf_output = BytesIO()
-        pdf.output(pdf_output)
+        pdf_bytes = pdf.output(dest="S").encode("latin1")
+        pdf_output.write(pdf_bytes)
         pdf_output.seek(0)
-        st.download_button("📥 Download Styled Report", data=pdf_output, file_name="Assessment_Report.pdf")
 
-elif page == "📈 Student Analytics":
-    st.header("📈 Student Performance Analytics")
-    student_id = st.selectbox("Select Student ID", list(students_data.keys()))
-    student_name = students_data[student_id]["name"]
-    st.subheader(f"Performance of: {student_name}")
-    df = get_student_quiz_history(student_id)
-    if not df.empty:
-        df["timestamp"] = pd.to_datetime(df["timestamp"])
-        df = df.sort_values("timestamp")
-        st.line_chart(df.set_index("timestamp")[["score"]])
-        st.dataframe(df)
-    else:
-        st.warning("No quiz history for this student.")
-
-elif page == "📊 Dashboard":
-    st.header("📊 Class Dashboard")
-    df = get_student_quiz_history()
-    if not df.empty:
-        avg_score = df.groupby("student_id")["score"].mean().reset_index()
-        st.bar_chart(avg_score.set_index("student_id"))
-    else:
-        st.info("No quiz data found.")
+        st.download_button(
+            label="📥 Download Styled Report",
+            data=pdf_output,
+            file_name=f"{student_id}_Assessment_Report.pdf",
+            mime="application/pdf"
+        )
