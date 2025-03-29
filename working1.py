@@ -195,7 +195,7 @@ if page == "🔍 Plagiarism/Reasoning Finder":
 
         logo_path = "sastra_logo.jpg"
         if os.path.exists(logo_path):
-            pdf.image(logo_path, x=45, y=10, w=150)
+            pdf.image(logo_path, x=45, y=10, w=125)
             pdf.ln(30)
 
         pdf.set_font("Arial", 'B', 14)
