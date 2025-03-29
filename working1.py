@@ -19,6 +19,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from fpdf import FPDF
 import unicodedata
+import re
 
 # Load environment variables
 load_dotenv()
@@ -105,7 +106,17 @@ def compute_local_plagiarism_scores(student_text, folder_path="local_reports"):
     return similarities
 
 def clean_text(text):
-    return unicodedata.normalize('NFKD', text).encode('ascii', 'ignore').decode('ascii')
+    """Normalize to ASCII and remove emojis or unsupported characters."""
+    if not text:
+        return ""
+    text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
+    emoji_pattern = re.compile("["
+                           u"\U0001F600-\U0001F64F"  # emoticons
+                           u"\U0001F300-\U0001F5FF"  # symbols & pictographs
+                           u"\U0001F680-\U0001F6FF"  # transport & map symbols
+                           u"\U0001F1E0-\U0001F1FF"  # flags
+                           "]+", flags=re.UNICODE)
+    return emoji_pattern.sub(r'', text)
 
 # --- Streamlit UI ---
 st.title("🚀 Generative AI-Based MEC102 Engineering Design Report Assessment")
@@ -222,8 +233,11 @@ if page == "🔍 Plagiarism/Reasoning Finder":
             pdf.cell(0, 10, f"{fname}: {score}", ln=True)
 
         pdf_file_name = f"{student_id}_Assessment_Report.pdf"
-        pdf.output(buffer)
-        st.download_button("📥 Download Styled Report", data=buffer.getvalue(), file_name=pdf_file_name)
+        pdf.output(buffer, 'S')  # Output as string to stream
+        pdf_output = BytesIO()
+        pdf.output(pdf_output)
+        pdf_output.seek(0)
+        st.download_button("📥 Download Styled Report", data=pdf_output, file_name="Assessment_Report.pdf")
 
 elif page == "📈 Student Analytics":
     st.header("📈 Student Performance Analytics")
