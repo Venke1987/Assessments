@@ -1,15 +1,12 @@
-
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-import random
 import openai
 import json
 from datetime import datetime
-import fitz  # PyMuPDF for PDFs
-import docx  # For Word document handling
-import ast
+import fitz  # PyMuPDF
+import docx
 import io
 import sqlite3
 import os
@@ -21,12 +18,12 @@ from fpdf import FPDF
 import unicodedata
 import re
 
-# Load environment variables
+# --- Load OpenAI key ---
 load_dotenv()
-
 openai.api_key = st.secrets["OPENAI_API_KEY"]
-client = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+client = openai.OpenAI(api_key=openai.api_key)
 
+# --- Authentication ---
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 
@@ -44,6 +41,7 @@ if not st.session_state.authenticated:
     if not st.session_state.authenticated:
         st.stop()
 
+# --- Initialize Database with New Columns ---
 def init_db():
     conn = sqlite3.connect('student_quiz_history.db')
     c = conn.cursor()
@@ -55,6 +53,9 @@ def init_db():
             topic TEXT,
             score INTEGER,
             total_questions INTEGER,
+            ai_score REAL,
+            llm_plagiarism_score REAL,
+            local_similarity_score REAL,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     ''')
@@ -70,8 +71,13 @@ def get_student_quiz_history(student_id=None):
         c.execute("SELECT * FROM quiz_results ORDER BY timestamp DESC")
     rows = c.fetchall()
     conn.close()
-    return pd.DataFrame(rows, columns=['id', 'student_id', 'student_name', 'topic', 'score', 'total_questions', 'timestamp'])
+    return pd.DataFrame(rows, columns=[
+        'id', 'student_id', 'student_name', 'topic', 'score',
+        'total_questions', 'ai_score', 'llm_plagiarism_score',
+        'local_similarity_score', 'timestamp'
+    ])
 
+# --- File Extractors ---
 def extract_text_from_pdf(uploaded_file):
     text = ""
     with fitz.open(stream=uploaded_file.read(), filetype="pdf") as doc:
@@ -83,43 +89,47 @@ def extract_text_from_docx(uploaded_file):
     doc = docx.Document(uploaded_file)
     return "\n".join([para.text for para in doc.paragraphs])
 
+# --- Local Plagiarism ---
 def compute_local_plagiarism_scores(student_text, folder_path="local_reports"):
-    similarities = {}
+    similarities = []
     if not os.path.exists(folder_path):
-        return {"Error": "Folder not found."}
+        return 0.0
     for fname in os.listdir(folder_path):
         if fname.endswith((".pdf", ".docx")):
             try:
                 path = os.path.join(folder_path, fname)
                 with open(path, 'rb') as f:
-                    if fname.endswith("pdf"):
-                        text = extract_text_from_pdf(f)
-                    else:
-                        text = extract_text_from_docx(f)
+                    text = extract_text_from_pdf(f) if fname.endswith("pdf") else extract_text_from_docx(f)
                 docs = [student_text, text]
                 tfidf = TfidfVectorizer().fit_transform(docs)
                 score = cosine_similarity(tfidf[0:1], tfidf[1:2])[0][0]
-                similarities[fname] = round(score, 2)
+                similarities.append(score)
             except:
-                similarities[fname] = "Error"
-    return similarities
+                continue
+    return round(max(similarities)*100, 2) if similarities else 0.0
 
+# --- Clean Text ---
+def clean_text(text):
+    text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
+    emoji_pattern = re.compile(
+        "[\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF\U0001F1E0-\U0001F1FF]+",
+        flags=re.UNICODE
+    )
+    return emoji_pattern.sub(r'', text)
+# --- Streamlit App Header ---
 st.title("🚀 Generative AI-Based MEC102 Engineering Design Report Assessment")
 st.sidebar.header("Navigation")
 page = st.sidebar.radio("Go to", ["📊 Dashboard", "🔍 Plagiarism/Reasoning Finder", "📈 Student Analytics"])
-
-def clean_text(text):
-    text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
-    emoji_pattern = re.compile("[\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF\U0001F1E0-\U0001F1FF]+", flags=re.UNICODE)
-    return emoji_pattern.sub(r'', text)
 
 if page == "🔍 Plagiarism/Reasoning Finder":
     st.header("📄 Upload and Assess Report")
     uploaded_file = st.file_uploader("Upload student's report (.docx or .pdf)", type=["docx", "pdf"])
     student_id = st.text_input("Enter Student ID", key="student_id_input", value="SEEE001")
+    student_name = st.text_input("Enter Student Name", key="student_name_input", value="Student Name")
+
     ai_assessment = ""
     llm_plagiarism = ""
-    local_similarities = {}
+    local_score = 0.0
 
     if uploaded_file:
         ext = uploaded_file.name.split('.')[-1].lower()
@@ -171,28 +181,22 @@ if page == "🔍 Plagiarism/Reasoning Finder":
 
         with col3:
             if st.button("🔎 Compare with Local Reports"):
-                results = compute_local_plagiarism_scores(student_text)
-                st.session_state['local_similarity'] = results
-                for doc, score in results.items():
-                    st.write(f"📄 {doc}: {score}")
+                local_score = compute_local_plagiarism_scores(student_text)
+                st.session_state['local_similarity_score'] = local_score
+                st.success(f"📊 Local Similarity Score: {local_score}%")
 
-    if st.button("📤 Export PDF Report"):
+    # Export & Save
+    if st.button("📤 Export PDF Report and Save Scores"):
         ai_feedback = clean_text(st.session_state.get("ai_assessment", "Not available"))
-        plagiarism_result = clean_text(st.session_state.get("llm_plagiarism", "Not available"))
-        rubric_dict = json.loads(st.session_state.get("rubric_json", json.dumps({
-            "Concept Understanding": 10,
-            "Implementation": 10,
-            "Analysis": 10,
-            "Clarity": 5,
-            "Creativity": 5
-        })))
-        local_similarity = st.session_state.get("local_similarity", {})
+        llm_result = clean_text(st.session_state.get("llm_plagiarism", "Plagiarism Risk: 0%"))
+        rubric_dict = json.loads(st.session_state.get("rubric_json", "{}"))
         total_score = sum(rubric_dict.values())
+        llm_percent = float(re.search(r"(\d+)%", llm_result).group(1)) if re.search(r"(\d+)%", llm_result) else 0
+        local_score = st.session_state.get("local_similarity_score", 0.0)
 
+        # Generate PDF
         pdf = FPDF()
         pdf.add_page()
-        pdf.set_font("Arial", size=12)
-
         logo_path = "sastra_logo.jpg"
         if os.path.exists(logo_path):
             pdf.image(logo_path, x=45, y=10, w=125)
@@ -203,54 +207,46 @@ if page == "🔍 Plagiarism/Reasoning Finder":
         pdf.ln(10)
 
         pdf.set_font("Arial", '', 12)
-        pdf.cell(0, 10, "Rubric-Based Evaluation:", ln=True)
+        pdf.cell(0, 10, f"Name: {student_name}", ln=True)
+        pdf.cell(0, 10, f"Total Score: {total_score}/50", ln=True)
         for k, v in rubric_dict.items():
             pdf.cell(0, 10, f"- {k}: {v}/10", ln=True)
-        pdf.cell(0, 10, f"Total Score: {total_score}/40", ln=True)
-        pdf.ln(10)
+        pdf.ln(5)
 
         pdf.multi_cell(0, 10, f"AI Assessment:\n{ai_feedback}")
         pdf.ln(5)
-        pdf.multi_cell(0, 10, f"LLM-Based Plagiarism Result:\n{plagiarism_result}")
+        pdf.multi_cell(0, 10, f"LLM-Based Plagiarism Result:\n{llm_result}")
         pdf.ln(5)
+        pdf.cell(0, 10, f"Local Similarity Score: {local_score}%", ln=True)
 
-        pdf.cell(0, 10, "Local Report Similarity:", ln=True)
-        for fname, score in local_similarity.items():
-            pdf.cell(0, 10, f"{fname}: {score}", ln=True)
-
+        # Save as PDF
         pdf_output = BytesIO()
         pdf_bytes = pdf.output(dest="S").encode("latin1")
         pdf_output.write(pdf_bytes)
         pdf_output.seek(0)
 
-        st.download_button(
-            label="📥 Download Styled Report",
-            data=pdf_output,
-            file_name=f"{student_id}_Assessment_Report.pdf",
-            mime="application/pdf"
-        )
-        # Save assessment to quiz history
+        st.download_button("📥 Download Report", data=pdf_output, file_name=f"{student_id}_Report.pdf")
+
+        # Save to DB
         conn = init_db()
         c = conn.cursor()
         c.execute("""
-            INSERT INTO quiz_results (student_id, student_name, topic, score, total_questions)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO quiz_results (student_id, student_name, topic, score, total_questions,
+                                      ai_score, llm_plagiarism_score, local_similarity_score)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            student_id,
-            student_id,  # Replace with actual name if available
-            "MEC102 Report",
-            total_score,
-            50  # or sum of max rubric values
+            student_id, student_name, "MEC102 Report", total_score, 50,
+            total_score, llm_percent, local_score
         ))
         conn.commit()
         conn.close()
-
+        st.success("✅ Assessment saved to database.")
 elif page == "📈 Student Analytics":
     st.header("📈 Student Performance Analytics")
-
     df = get_student_quiz_history()
+
     if df.empty:
-        st.warning("No quiz history available.")
+        st.warning("No assessment records available.")
     else:
         student_ids = df['student_id'].unique().tolist()
         selected_id = st.selectbox("Select Student ID", student_ids)
@@ -259,58 +255,45 @@ elif page == "📈 Student Analytics":
         student_name = student_df['student_name'].iloc[0]
         st.subheader(f"Performance Analytics for: {student_name} ({selected_id})")
 
-        # Trend chart
         student_df["timestamp"] = pd.to_datetime(student_df["timestamp"])
         student_df = student_df.sort_values("timestamp")
-        st.line_chart(student_df.set_index("timestamp")[["score"]])
 
-        # Table
-        st.dataframe(student_df)
+        st.markdown("### 🧠 AI Score Trend")
+        st.line_chart(student_df.set_index("timestamp")[["ai_score"]])
 
-        # Summary stats
-        st.markdown("### Summary")
-        st.write(f"**Total Quizzes Attempted**: {len(student_df)}")
-        st.write(f"**Average Score**: {student_df['score'].mean():.2f}")
-        st.write(f"**Best Score**: {student_df['score'].max()}")
-        st.write(f"**Most Recent Topic**: {student_df['topic'].iloc[-1]}")
+        st.markdown("### 🔍 LLM Plagiarism Trend")
+        st.line_chart(student_df.set_index("timestamp")[["llm_plagiarism_score"]])
+
+        st.markdown("### 🧪 Local Similarity Trend")
+        st.line_chart(student_df.set_index("timestamp")[["local_similarity_score"]])
+
+        st.markdown("### 🔢 Summary")
+        st.dataframe(student_df[["topic", "ai_score", "llm_plagiarism_score", "local_similarity_score", "timestamp"]])
+        st.info(f"**Average AI Score**: {student_df['ai_score'].mean():.2f}")
+        st.info(f"**Average LLM Plagiarism %**: {student_df['llm_plagiarism_score'].mean():.2f}%")
+        st.info(f"**Average Local Similarity %**: {student_df['local_similarity_score'].mean():.2f}%")
 
 elif page == "📊 Dashboard":
-    st.header("📊 Class-Wide Dashboard")
+    st.header("📊 Class-Wide Analytics")
     df = get_student_quiz_history()
 
     if df.empty:
-        st.info("No quiz data available.")
+        st.warning("No assessment records found.")
     else:
-        st.subheader("Average Scores per Student")
-        avg_score = df.groupby("student_id")["score"].mean().reset_index()
-        st.bar_chart(avg_score.set_index("student_id"))
+        avg_df = df.groupby("student_id").agg({
+            "ai_score": "mean",
+            "llm_plagiarism_score": "mean",
+            "local_similarity_score": "mean"
+        }).reset_index()
 
-        st.subheader("Quiz Topic Distribution")
-        topic_counts = df["topic"].value_counts()
-        fig, ax = plt.subplots()
-        sns.barplot(x=topic_counts.values, y=topic_counts.index, ax=ax)
-        ax.set_xlabel("Number of Quizzes")
-        ax.set_ylabel("Topic")
-        st.pyplot(fig)
+        st.subheader("🧠 Average AI Score per Student")
+        st.bar_chart(avg_df.set_index("student_id")[["ai_score"]])
 
-        st.subheader("Top Performing Students")
-        top_students = avg_score.sort_values("score", ascending=False).head(5)
-        st.table(top_students.rename(columns={"score": "Average Score"}))
-# 🧪 TEMPORARY: Add dummy quiz history for testing
-if "seeded" not in st.session_state:
-    st.session_state.seeded = True
-    conn = init_db()
-    c = conn.cursor()
-    sample_data = [
-        ("SEEE001", "Adhithya V", "Edge AI", 8, 10),
-        ("SEEE001", "Adhithya V", "Fuzzy Logic", 7, 10),
-        ("SEEE010", "Dodda Sri Pujitha", "Edge AI", 9, 10),
-        ("SEEE010", "Dodda Sri Pujitha", "Fuzzy Logic", 8, 10),
-        ("SEEE011", "Gowtham", "AI Ethics", 6, 10),
-    ]
-    for student_id, student_name, topic, score, total_q in sample_data:
-        c.execute("INSERT INTO quiz_results (student_id, student_name, topic, score, total_questions) VALUES (?, ?, ?, ?, ?)",
-                  (student_id, student_name, topic, score, total_q))
-    conn.commit()
-    conn.close()
-    st.success("Dummy data seeded! Refresh the app to view analytics.")
+        st.subheader("🔍 Average LLM Plagiarism %")
+        st.bar_chart(avg_df.set_index("student_id")[["llm_plagiarism_score"]])
+
+        st.subheader("🧪 Average Local Similarity %")
+        st.bar_chart(avg_df.set_index("student_id")[["local_similarity_score"]])
+
+        st.subheader("🏆 Top Students by AI Score")
+        st.table(avg_df.sort_values("ai_score", ascending=False).head(5).rename(columns={"ai_score": "Avg AI Score"}))
