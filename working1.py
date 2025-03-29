@@ -159,8 +159,22 @@ if page == "🔍 Plagiarism/Reasoning Finder":
                     ],
                     temperature=0.2
                 )
+
                 ai_assessment = response.choices[0].message.content
                 st.session_state['ai_assessment'] = ai_assessment
+
+                # Extract score from AI feedback text like "**Overall Score: 36/40**"
+                import re
+                score_match = re.search(r"Overall Score:\s*(\d+)/\d+", ai_assessment)
+                if score_match:
+                    ai_score = int(score_match.group(1))
+                else:
+                    ai_score = sum(json.loads(rubric).values())  # fallback to max total
+
+                st.session_state['ai_score'] = ai_score
+
+
+                
                 st.success("✅ AI Feedback")
                 st.write(ai_assessment)
 
@@ -190,7 +204,7 @@ if page == "🔍 Plagiarism/Reasoning Finder":
         ai_feedback = clean_text(st.session_state.get("ai_assessment", "Not available"))
         llm_result = clean_text(st.session_state.get("llm_plagiarism", "Plagiarism Risk: 0%"))
         rubric_dict = json.loads(st.session_state.get("rubric_json", "{}"))
-        total_score = sum(rubric_dict.values())
+        total_score = st.session_state.get('ai_score', sum(rubric_dict.values()))
         llm_percent = float(re.search(r"(\d+)%", llm_result).group(1)) if re.search(r"(\d+)%", llm_result) else 0
         local_score = st.session_state.get("local_similarity_score", 0.0)
 
