@@ -33,7 +33,7 @@ if "authenticated" not in st.session_state:
 def authenticate_user():
     st.sidebar.markdown("🔐 **Faculty Login**")
     password = st.sidebar.text_input("Enter Password", type="password")
-    if password == "admin123":
+    if password == "admin@123":
         st.session_state.authenticated = True
         st.success("🔓 Access granted.")
     else:
