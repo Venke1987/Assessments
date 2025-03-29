@@ -80,7 +80,7 @@ def extract_text_from_pdf(uploaded_file):
 
 def extract_text_from_docx(uploaded_file):
     doc = docx.Document(uploaded_file)
-    return "
+    return "Some message
 ".join([para.text for para in doc.paragraphs])
 
 def compute_local_plagiarism_scores(student_text, folder_path="local_reports"):
