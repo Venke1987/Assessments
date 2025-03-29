@@ -1,12 +1,16 @@
+
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
+import seaborn as sns
+import random
 import openai
 import json
 from datetime import datetime
-import fitz  # PyMuPDF
-import docx
-import io
+import fitz  # PyMuPDF for PDFs
+import docx  # For Word document handling
+import ast  # For checking Python syntax
+import io  # For handling uploaded files
 import sqlite3
 import os
 from io import BytesIO
@@ -39,19 +43,21 @@ if not st.session_state.authenticated:
     if not st.session_state.authenticated:
         st.stop()
 
-# DB init
+# --- DB & Extraction Utilities ---
 def init_db():
     conn = sqlite3.connect('student_quiz_history.db')
     c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS quiz_results (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        student_id TEXT,
-        student_name TEXT,
-        topic TEXT,
-        score INTEGER,
-        total_questions INTEGER,
-        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-    )''')
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS quiz_results (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id TEXT,
+            student_name TEXT,
+            topic TEXT,
+            score INTEGER,
+            total_questions INTEGER,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
     conn.commit()
     return conn
 
@@ -106,20 +112,18 @@ st.title("🚀 Generative AI-Based MEC102 Engineering Design Report Assessment")
 st.sidebar.header("Navigation")
 page = st.sidebar.radio("Go to", ["📊 Dashboard", "🔍 Plagiarism/Reasoning Finder", "📈 Student Analytics"])
 
-# Sample Data for Student Analytics
+# Dummy student data
 students_data = {
     "SEEE001": {"name": "Adhithya V"},
     "SEEE002": {"name": "Akety Manjunath"},
-    "SEEE003": {"name": "Aravind S"},
-    "SEEE004": {"name": "Aswin S"},
-    "SEEE005": {"name": "Avinash Kumar R"},
-    "SEEE006": {"name": "Bhavya Sri B"},
+    "SEEE003": {"name": "Aravind S"}
 }
 
-# --- Page: Plagiarism & AI Assessment ---
 if page == "🔍 Plagiarism/Reasoning Finder":
     st.header("📄 Upload and Assess Report")
     uploaded_file = st.file_uploader("Upload student's report (.docx or .pdf)", type=["docx", "pdf"])
+    student_id = st.text_input("Enter Student ID", value="SEEE001")
+
     ai_assessment = ""
     llm_plagiarism = ""
     local_similarities = {}
@@ -135,6 +139,8 @@ if page == "🔍 Plagiarism/Reasoning Finder":
             "Clarity": 5,
             "Creativity": 5
         }, indent=2), height=150)
+
+        st.session_state["rubric"] = rubric
 
         col1, col2, col3 = st.columns(3)
 
@@ -182,22 +188,43 @@ if page == "🔍 Plagiarism/Reasoning Finder":
         pdf.add_page()
         pdf.set_font("Arial", size=12)
 
+        logo_path = "sastra_logo.png"
+        if os.path.exists(logo_path):
+            pdf.image(logo_path, x=10, y=8, w=30)
+            pdf.ln(20)
+
+        student_name = students_data.get(student_id, {}).get("name", "Unknown")
+        pdf.set_font("Arial", 'B', size=14)
+        pdf.cell(0, 10, f"Assessment Report - {student_name} ({student_id})", ln=True)
+        pdf.ln()
+
+        rubric_dict = json.loads(st.session_state.get("rubric", "{}"))
+        rubric_text = "\nRubric Breakdown:\n"
+        total_score = 0
+        for criterion, score in rubric_dict.items():
+            rubric_text += f"• {criterion}: {score}\n"
+            total_score += score
+        rubric_text += f"\nTotal Score: {total_score}/40\n"
+
         ai_feedback = clean_text(st.session_state.get("ai_assessment", "N/A"))
         plagiarism_result = clean_text(st.session_state.get("llm_plagiarism", "N/A"))
 
+        pdf.set_font("Arial", size=12)
+        pdf.multi_cell(0, 10, rubric_text)
+        pdf.ln()
         pdf.multi_cell(0, 10, "AI Assessment\n" + ai_feedback)
         pdf.ln()
         pdf.multi_cell(0, 10, "LLM Plagiarism\n" + plagiarism_result)
         pdf.ln()
-        pdf.multi_cell(0, 10, "Local Report Similarity\n")
+
+        pdf.multi_cell(0, 10, "Local Report Similarity")
         for fname, score in st.session_state.get("local_similarity", {}).items():
             pdf.cell(0, 10, f"{fname}: {score}", ln=True)
 
-        pdf_bytes = pdf.output(dest='S').encode('latin1')
-        st.download_button("📥 Download Styled Report", data=pdf_bytes, file_name="Assessment_Report.pdf")
+        pdf_file_name = f"{student_id}_Assessment_Report.pdf"
+        pdf.output(buffer)
+        st.download_button("📥 Download Styled Report", data=buffer.getvalue(), file_name=pdf_file_name)
 
-
-# --- Page: Student Analytics ---
 elif page == "📈 Student Analytics":
     st.header("📈 Student Performance Analytics")
     student_id = st.selectbox("Select Student ID", list(students_data.keys()))
@@ -212,7 +239,6 @@ elif page == "📈 Student Analytics":
     else:
         st.warning("No quiz history for this student.")
 
-# --- Page: Dashboard ---
 elif page == "📊 Dashboard":
     st.header("📊 Class Dashboard")
     df = get_student_quiz_history()
