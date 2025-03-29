@@ -97,7 +97,11 @@ init_db()
 
 st.title("🚀 Generative AI-Based MEC102 Engineering Design Project Report Assessment System")
 st.sidebar.header("Navigation")
-page = st.sidebar.radio("Go to", ["🔍 Plagiarism/Reasoning Finder"])
+page = st.sidebar.radio("Go to", [
+    "📊 Dashboard",
+    "🔍 Plagiarism/Reasoning Finder",
+    "📈 Student Analytics"
+])
 
 if page == "🔍 Plagiarism/Reasoning Finder":
     st.header("🔍 Plagiarism/Reasoning Finder")
@@ -239,5 +243,25 @@ if page == "🔍 Plagiarism/Reasoning Finder":
                     st.error(f"{fname}: {score}")
         else:
             st.warning("No local similarity check performed.")
+elif page == "📈 Student Analytics":
+    st.header("📈 Student Performance Analytics")
+    
+    student_id = st.selectbox("Select Student ID", list(students_data.keys()), key="analytics_select")
+    student_name = students_data[student_id]["name"]
+    st.subheader(f"Performance of: {student_name}")
+    
+    history_df = get_student_quiz_history(student_id)
+    
+    if not history_df.empty:
+        st.markdown("### 🧪 Quiz Scores Over Time")
+        chart_data = history_df[["timestamp", "score"]].copy()
+        chart_data["timestamp"] = pd.to_datetime(chart_data["timestamp"])
+        chart_data = chart_data.sort_values("timestamp")
+        st.line_chart(chart_data.set_index("timestamp"))
+        
+        st.markdown("### 📝 All Quiz Attempts")
+        st.dataframe(history_df)
+    else:
+        st.warning("No quiz history found for this student.")
 
 
