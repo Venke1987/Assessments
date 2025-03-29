@@ -44,7 +44,30 @@ def init_db():
     ''')
     conn.commit()
     return conn
-
+def get_student_quiz_history(student_id=None):
+    conn = init_db()
+    c = conn.cursor()
+    
+    if student_id:
+        c.execute('''
+        SELECT student_id, student_name, topic, score, total_questions, timestamp
+        FROM quiz_results
+        WHERE student_id = ?
+        ORDER BY timestamp DESC
+        ''', (student_id,))
+    else:
+        c.execute('''
+        SELECT student_id, student_name, topic, score, total_questions, timestamp
+        FROM quiz_results
+        ORDER BY timestamp DESC
+        ''')
+    
+    results = c.fetchall()
+    conn.close()
+    
+    if results:
+        return pd.DataFrame(results, columns=['student_id', 'student_name', 'topic', 'score', 'total_questions', 'timestamp'])
+    return pd.DataFrame()
 def extract_text_from_docx(uploaded_file):
     try:
         doc = docx.Document(uploaded_file)
