@@ -199,10 +199,16 @@ if page == "🔍 Plagiarism/Reasoning Finder":
                 pdf.cell(0, 10, f"{fname}: {score}", ln=True)
 
             pdf_output = BytesIO()
-            pdf.output(pdf_output)
+            pdf_bytes = pdf.output(dest='S').encode('latin-1')
+            pdf_output.write(pdf_bytes)
+            pdf_output.seek(0)
+
             st.download_button("📥 Download Styled Report",
-                               data=pdf_output.getvalue(),
+                               data=pdf_output,
                                file_name=f"{student_id_input}_Assessment.pdf")
+
+
+
 
 elif page == "📈 Student Analytics":
     st.header("📈 Student Performance Analytics")
