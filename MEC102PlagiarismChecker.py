@@ -143,6 +143,7 @@ def check_python_syntax(code):
 # Video processor for proctoring during the test
 # Video processor for proctoring during the test
 # Enhanced Video Processor for AI Proctoring
+from streamlit_webrtc import VideoTransformerBase
 class EnhancedVideoProcessor(VideoTransformerBase):
     def __init__(self):
         # Face and eye detection using Haar cascades
