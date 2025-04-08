@@ -53,6 +53,7 @@ try:
     from sklearn.ensemble import RandomForestClassifier
 except ImportError:
     pass
+from dotenv import load_dotenv
 load_dotenv()
 
 # ---------------- SET YOUR OPENAI API KEY HERE ----------------
