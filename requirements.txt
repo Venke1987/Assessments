@@ -11,3 +11,4 @@ scikit-learn
 xgboost>=1.6.0
 opencv-python-headless
 fpdf
+streamlit-webrtc
