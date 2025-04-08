@@ -20,6 +20,8 @@ import time
 from PIL import Image, ImageDraw
 from PIL import Image, ImageDraw
 from io import BytesIO
+import unicodedata
+import re
 # Add this near your other imports
 from ai_tutor_helper import setup_ai_tutor, display_ai_tutor_page
 # For Live OMR Test webcam functionality
@@ -60,6 +62,23 @@ load_dotenv()
 openai.api_key = st.secrets["OPENAI_API_KEY"]
 client = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])  # Use Streamlit Secrets API Key
 
+# --- Authentication ---
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
+
+def authenticate_user():
+    st.sidebar.markdown("🔐 **Faculty Login**")
+    password = st.sidebar.text_input("Enter Password", type="password")
+    if password == "admin@123":
+        st.session_state.authenticated = True
+        st.success("🔓 Access granted.")
+    else:
+        st.sidebar.warning("Invalid password.")
+
+if not st.session_state.authenticated:
+    authenticate_user()
+    if not st.session_state.authenticated:
+        st.stop()
 
 # ---------------- DATABASE INIT ----------------
 def init_db():
