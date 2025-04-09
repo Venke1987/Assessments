@@ -78,8 +78,29 @@ def get_student_quiz_history(student_id=None):
         'local_similarity_score', 'timestamp'
     ])
 
+# --- Safe PDF Extraction ---
+def extract_pdf_safe(file_obj):
+    """
+    Wrap fitz.open() in try/except. Return '' if it fails.
+    We read the file into memory, then pass the bytes to fitz.
+    """
+    data = file_obj.read()
+    try:
+        with fitz.open(stream=data, filetype="pdf") as doc:
+            content = ""
+            for page in doc:
+                content += page.get_text()
+        return content
+    except fitz.fitz.EmptyFileError:
+        # Raise so we can catch it in the calling function
+        raise
+
 # --- File Extractors ---
 def extract_text_from_pdf(uploaded_file):
+    """
+    Standard extraction for an uploaded PDF in Streamlit (like for a single student's submission).
+    This does not do the try/except because we assume the user upload is valid.
+    """
     text = ""
     with fitz.open(stream=uploaded_file.read(), filetype="pdf") as doc:
         for page in doc:
@@ -109,12 +130,17 @@ def compute_local_plagiarism_scores(student_text, folder_path="local_reports"):
             try:
                 path = os.path.join(folder_path, fname)
                 with open(path, 'rb') as f:
-                    text = extract_text_from_pdf(f) if fname.endswith("pdf") else extract_text_from_docx(f)
+                    # If PDF, use the simpler approach (no try/except).
+                    if fname.endswith(".pdf"):
+                        text = extract_text_from_pdf(f)
+                    else:
+                        text = extract_text_from_docx(f)
                 docs = [student_text, text]
                 tfidf = TfidfVectorizer().fit_transform(docs)
                 score = cosine_similarity(tfidf[0:1], tfidf[1:2])[0][0]
                 similarities.append(score)
             except:
+                # If there's an error reading the file, skip it
                 continue
     return round(max(similarities)*100, 2) if similarities else 0.0
 
@@ -144,19 +170,39 @@ def compute_local_plagiarism_details(student_text, folder_path="local_reports", 
     """
     Returns detailed plagiarism info by comparing chunked student_text vs. chunked local reports.
     threshold: minimum similarity to mark chunk as plagiarized
+    - Skips empty/unreadable files with a warning.
     """
     student_chunks = chunk_text(student_text)
     local_docs = []
 
-    # Gather local reports (and chunk them)
     if os.path.exists(folder_path):
         for fname in os.listdir(folder_path):
             if fname.endswith((".pdf", ".docx")):
                 path = os.path.join(folder_path, fname)
-                with open(path, 'rb') as f:
-                    text = extract_text_from_pdf(f) if fname.endswith("pdf") else extract_text_from_docx(f)
-                    doc_chunks = chunk_text(text)
-                    local_docs.append((fname, doc_chunks))
+
+                # Skip if file is empty
+                if os.path.getsize(path) == 0:
+                    st.warning(f"Skipping empty file: {fname}")
+                    continue
+
+                # Attempt to open and extract text
+                try:
+                    with open(path, 'rb') as f:
+                        if fname.endswith(".pdf"):
+                            pdf_text = extract_pdf_safe(f)
+                            text = pdf_text
+                        else:
+                            text = extract_text_from_docx(f)
+                except fitz.fitz.EmptyFileError:
+                    st.warning(f"Skipping unreadable PDF: {fname}")
+                    continue
+                except Exception as e:
+                    st.warning(f"Error reading file {fname}: {e}")
+                    continue
+
+                # Now chunk the extracted text
+                doc_chunks = chunk_text(text)
+                local_docs.append((fname, doc_chunks))
 
     detailed_results = []
     for i, s_chunk in enumerate(student_chunks):
@@ -253,7 +299,6 @@ def calculate_plagiarized_portions(local_details, internet_details, student_text
 # =========== STREAMLIT APP (MAIN BODY) ===================
 # =========================================================
 
-# --- Streamlit App Header ---
 st.title("🚀 Generative AI-Based MEC102 Engineering Design Report Assessment")
 st.sidebar.header("Navigation")
 page = st.sidebar.radio("Go to", ["📊 Dashboard", "🔍 Plagiarism/Reasoning Finder", "📈 Student Analytics"])
@@ -271,7 +316,10 @@ if page == "🔍 Plagiarism/Reasoning Finder":
     if uploaded_file:
         # Determine file type and extract text
         ext = uploaded_file.name.split('.')[-1].lower()
-        student_text = extract_text_from_pdf(uploaded_file) if ext == "pdf" else extract_text_from_docx(uploaded_file)
+        if ext == "pdf":
+            student_text = extract_text_from_pdf(uploaded_file)
+        else:
+            student_text = extract_text_from_docx(uploaded_file)
 
         rubric_json = json.dumps({
             "Concept Understanding": 10,
@@ -286,6 +334,7 @@ if page == "🔍 Plagiarism/Reasoning Finder":
 
         col1, col2, col3, col4 = st.columns(4)
 
+        # 1) AI Assessment
         with col1:
             if st.button("📝 Generate AI Assessment"):
                 prompt = f"Evaluate based on rubric: {rubric}\n\nSubmission:\n{student_text}"
@@ -302,7 +351,6 @@ if page == "🔍 Plagiarism/Reasoning Finder":
                 st.session_state['ai_assessment'] = ai_assessment
 
                 # Attempt to extract "Overall Score: X/..." from the AI assessment
-                import re
                 score_match = re.search(r"Overall Score:\s*(\d+)/\d+", ai_assessment)
                 if score_match:
                     ai_score = int(score_match.group(1))
@@ -314,6 +362,7 @@ if page == "🔍 Plagiarism/Reasoning Finder":
                 st.success("✅ AI Feedback")
                 st.write(ai_assessment)
 
+        # 2) LLM-Based Plagiarism
         with col2:
             if st.button("🔍 LLM-Based Plagiarism"):
                 prompt = f"Check for plagiarism and respond as: 'Plagiarism Risk: XX%'\n\nText:\n{student_text}"
@@ -329,20 +378,20 @@ if page == "🔍 Plagiarism/Reasoning Finder":
                 st.session_state['llm_plagiarism'] = llm_plagiarism
                 st.info(llm_plagiarism)
 
+        # 3) Single-Score Local Check
         with col3:
             if st.button("🔎 Compare with Local Reports"):
-                # Original single-score approach
                 local_score = compute_local_plagiarism_scores(student_text)
                 st.session_state['local_similarity_score'] = local_score
                 st.success(f"📊 Local Similarity Score: {local_score}%")
 
-        # NEW: Detailed chunk-based plagiarism analysis
+        # 4) Detailed Plagiarism Analysis (chunk-level)
         with col4:
             if st.button("🔬 Detailed Plagiarism Analysis"):
-                # 1) Compute local chunk-level details
+                # 1) Local chunk-level details
                 local_details = compute_local_plagiarism_details(student_text)
 
-                # 2) Compute internet chunk-level details (placeholder)
+                # 2) Internet chunk-level details (placeholder)
                 internet_details = compute_internet_plagiarism_details(student_text)
 
                 # 3) Combine & rank
@@ -367,6 +416,7 @@ if page == "🔍 Plagiarism/Reasoning Finder":
         llm_result = clean_text(st.session_state.get("llm_plagiarism", "Plagiarism Risk: 0%"))
         rubric_dict = json.loads(st.session_state.get("rubric_json", "{}"))
         total_score = st.session_state.get('ai_score', sum(rubric_dict.values()))
+
         llm_percent_search = re.search(r"(\d+)%", llm_result)
         llm_percent = float(llm_percent_search.group(1)) if llm_percent_search else 0.0
         local_score = st.session_state.get("local_similarity_score", 0.0)
