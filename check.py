@@ -17,15 +17,19 @@ from sklearn.metrics.pairwise import cosine_similarity
 from fpdf import FPDF
 import unicodedata
 import re
-import random  # for dummy internet similarity
-import html  # for robust HTML escaping
+import random  # used to simulate internet similarity
+import html   # for robust HTML escaping
 
-# --- Load OpenAI key ---
+# =========================================================
+# 1. SETUP: OpenAI key, Authentication, and Database setup
+# =========================================================
+
+# Load OpenAI API key from environment variables
 load_dotenv()
 openai.api_key = st.secrets["OPENAI_API_KEY"]
 client = openai.OpenAI(api_key=openai.api_key)
 
-# --- Authentication ---
+# --- User Authentication ---
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 
@@ -43,7 +47,7 @@ if not st.session_state.authenticated:
     if not st.session_state.authenticated:
         st.stop()
 
-# --- Initialize Database with New Columns ---
+# --- Database Initialization ---
 def init_db():
     conn = sqlite3.connect('student_quiz_history.db')
     c = conn.cursor()
@@ -79,11 +83,14 @@ def get_student_quiz_history(student_id=None):
         'local_similarity_score', 'timestamp'
     ])
 
-# --- Safe PDF Extraction ---
+# =========================================================
+# 2. FILE EXTRACTION AND TEXT CLEANING FUNCTIONS
+# =========================================================
+
 def extract_pdf_safe(file_obj):
     """
-    Reads file into memory and attempts to extract text.
-    Raises fitz.fitz.EmptyFileError if file is unreadable.
+    Reads file data into memory and tries to extract text from a PDF.
+    Will raise fitz.fitz.EmptyFileError if the PDF is unreadable.
     """
     data = file_obj.read()
     try:
@@ -95,11 +102,8 @@ def extract_pdf_safe(file_obj):
     except fitz.fitz.EmptyFileError:
         raise
 
-# --- File Extractors ---
 def extract_text_from_pdf(uploaded_file):
-    """
-    For student uploads. Assumes valid PDF.
-    """
+    """Extract text from a student-uploaded PDF (assumed valid)."""
     text = ""
     with fitz.open(stream=uploaded_file.read(), filetype="pdf") as doc:
         for page in doc:
@@ -107,11 +111,14 @@ def extract_text_from_pdf(uploaded_file):
     return text
 
 def extract_text_from_docx(uploaded_file):
+    """Extract text from a DOCX file."""
     doc_ = docx.Document(uploaded_file)
     return "\n".join([para.text for para in doc_.paragraphs])
 
-# --- Clean Text ---
 def clean_text(text):
+    """
+    Normalize text to remove special Unicode characters and emoji.
+    """
     text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
     emoji_pattern = re.compile(
         "[\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF\U0001F1E0-\U0001F1FF]+",
@@ -119,7 +126,11 @@ def clean_text(text):
     )
     return emoji_pattern.sub(r'', text)
 
-# --- Simple Single-Score Local Plagiarism Check (Original) ---
+# =========================================================
+# 3. PLAGIARISM CHECK FUNCTIONS
+# =========================================================
+
+# 3a. Single-Score Local Plagiarism Check (for comparison)
 def compute_local_plagiarism_scores(student_text, folder_path="local_reports"):
     similarities = []
     if not os.path.exists(folder_path):
@@ -141,13 +152,11 @@ def compute_local_plagiarism_scores(student_text, folder_path="local_reports"):
                 continue
     return round(max(similarities)*100, 2) if similarities else 0.0
 
-# =========================================================
-# =========== NEW CHUNK-BASED FUNCTIONS BELOW =============
-# =========================================================
+# 3b. Chunk-Level Plagiarism Functions
 
 def chunk_text(text, chunk_size=300, overlap=50):
     """
-    Splits text into overlapping chunks (by words).
+    Splits text into overlapping chunks based on word count.
     """
     words = text.split()
     chunks = []
@@ -162,10 +171,14 @@ def chunk_text(text, chunk_size=300, overlap=50):
     return chunks
 
 def compute_local_plagiarism_details(student_text, folder_path="local_reports", threshold=0.3):
+    """
+    For each chunk in the student text, compute the best similarity score from local docs.
+    Skip empty or unreadable files/chunks. Returns a list of dicts (one per flagged chunk).
+    """
     student_chunks = chunk_text(student_text)
     local_docs = []
 
-    # Gather local docs + chunk them
+    # Process each local file (PDF or DOCX)
     if os.path.exists(folder_path):
         for fname in os.listdir(folder_path):
             if fname.endswith((".pdf", ".docx")):
@@ -186,7 +199,6 @@ def compute_local_plagiarism_details(student_text, folder_path="local_reports", 
                     st.warning(f"Error reading file {fname}: {e}")
                     continue
 
-                # If the doc is empty, skip
                 if not file_text.strip():
                     st.warning(f"Skipping file {fname} because it's empty.")
                     continue
@@ -196,15 +208,14 @@ def compute_local_plagiarism_details(student_text, folder_path="local_reports", 
 
     detailed_results = []
     for i, s_chunk in enumerate(student_chunks):
-        # Skip empty student chunk
         if not s_chunk.strip():
             continue
 
         best_score = 0.0
         best_file = None
 
+        # Compare student chunk against all valid chunks from local docs
         for fname, doc_chunks in local_docs:
-            # Filter out empty doc chunks
             valid_doc_chunks = [dc for dc in doc_chunks if dc.strip()]
             if not valid_doc_chunks:
                 continue
@@ -213,7 +224,6 @@ def compute_local_plagiarism_details(student_text, folder_path="local_reports", 
             if len(docs) < 2:
                 continue
 
-            # Safely handle TfidfVectorizer
             try:
                 tfidf = TfidfVectorizer().fit_transform(docs)
                 sim_scores = cosine_similarity(tfidf[0:1], tfidf[1:]).flatten()
@@ -236,11 +246,10 @@ def compute_local_plagiarism_details(student_text, folder_path="local_reports", 
 
     return detailed_results
 
-
 def compute_internet_plagiarism_details(student_text, threshold=0.3):
     """
-    Placeholder: Returns random similarity scores for each chunk.
-    Replace with calls to a plagiarism API as needed.
+    Simulates internet plagiarism check by assigning random similarity scores to each chunk.
+    Replace this with an actual API call if needed.
     """
     student_chunks = chunk_text(student_text)
     detailed_results = []
@@ -255,52 +264,43 @@ def compute_internet_plagiarism_details(student_text, threshold=0.3):
                 "best_url": f"https://example.com/matching_page_{i}"
             })
     return detailed_results
+
+# 3c. Merge Local and Internet Matches into a Single Row per Chunk
 def merge_local_and_internet(local_details, internet_details):
     """
-    Returns a list of dictionaries, each representing one chunk_index,
-    with the best local match and best internet match combined.
+    For each unique chunk_index, merge the best local match and best internet match into one row.
+    Returns a list of dictionaries with these combined values.
     """
-    # 1) Build dictionaries keyed by chunk_index for local & internet
+    # Build dictionary for local details (keeping highest score per chunk)
     local_dict = {}
     for item in local_details:
         idx = item["chunk_index"]
-        # If there's already a match for this idx, keep the one with the higher local score
         if idx not in local_dict or item["best_local_score"] > local_dict[idx]["best_local_score"]:
             local_dict[idx] = item
 
+    # Build dictionary for internet details (keeping highest score per chunk)
     internet_dict = {}
     for item in internet_details:
         idx = item["chunk_index"]
         if idx not in internet_dict or item["best_internet_score"] > internet_dict[idx]["best_internet_score"]:
             internet_dict[idx] = item
 
-    # 2) Merge them chunk by chunk
+    # Merge both dictionaries into one row per chunk_index
     all_indices = set(local_dict.keys()).union(set(internet_dict.keys()))
     merged_rows = []
-
     for idx in sorted(all_indices):
-        # We'll get the chunk_text from whichever side is available
-        chunk_text = None
-        if idx in local_dict:
-            chunk_text = local_dict[idx]["chunk_text"]
-        elif idx in internet_dict:
-            chunk_text = internet_dict[idx]["chunk_text"]
+        # Get the chunk_text from either dictionary (they should match if available)
+        chunk_text = local_dict[idx]["chunk_text"] if idx in local_dict else internet_dict[idx]["chunk_text"]
 
-        # Local side (if any)
-        local_score = 0.0
-        local_file = ""
-        if idx in local_dict:
-            local_score = local_dict[idx].get("best_local_score", 0.0)
-            local_file = local_dict[idx].get("best_local_file", "")
+        # Get local values
+        local_score = local_dict[idx]["best_local_score"] if idx in local_dict else 0.0
+        local_file = local_dict[idx]["best_local_file"] if idx in local_dict else ""
 
-        # Internet side (if any)
-        internet_score = 0.0
-        internet_url = ""
-        if idx in internet_dict:
-            internet_score = internet_dict[idx].get("best_internet_score", 0.0)
-            internet_url = internet_dict[idx].get("best_url", "")
+        # Get internet values
+        internet_score = internet_dict[idx]["best_internet_score"] if idx in internet_dict else 0.0
+        internet_url = internet_dict[idx]["best_url"] if idx in internet_dict else ""
 
-        # Compute an overall "best score"
+        # Determine overall best score and source
         if local_score >= internet_score:
             best_score = local_score
             best_source_type = "Local"
@@ -311,43 +311,19 @@ def merge_local_and_internet(local_details, internet_details):
         merged_rows.append({
             "chunk_index": idx,
             "chunk_text": chunk_text,
-            "best_local_score": round(local_score, 3),
+            "best_local_score": local_score,
             "local_file": local_file,
-            "best_internet_score": round(internet_score, 3),
+            "best_internet_score": internet_score,
             "internet_url": internet_url,
-            "best_score": round(best_score, 3),
+            "best_score": best_score,
             "best_source_type": best_source_type
         })
 
     return merged_rows
 
-def combine_and_rank_plagiarism(local_details, internet_details):
-    """
-    Merges local and internet plagiarism matches and sorts them by score descending.
-    """
-    combined = []
-    for item in local_details:
-        combined.append({
-            "chunk_index": item["chunk_index"],
-            "chunk_text": item["chunk_text"],
-            "source_type": "Local",
-            "score": item["best_local_score"],
-            "source_file_or_url": item["best_local_file"]
-        })
-    for item in internet_details:
-        combined.append({
-            "chunk_index": item["chunk_index"],
-            "chunk_text": item["chunk_text"],
-            "source_type": "Internet",
-            "score": item["best_internet_score"],
-            "source_file_or_url": item["best_url"]
-        })
-    combined.sort(key=lambda x: x["score"], reverse=True)
-    return combined
-
 def calculate_plagiarized_portions(local_details, internet_details, student_text):
     """
-    Calculates the percentage of the student text flagged as plagiarized.
+    Calculate the percentage of student text (by word count) flagged as plagiarized.
     """
     student_chunks = chunk_text(student_text)
     total_words = sum(len(ch.split()) for ch in student_chunks)
@@ -361,13 +337,14 @@ def calculate_plagiarized_portions(local_details, internet_details, student_text
     portion_internet = round((internet_word_count / total_words) * 100, 2) if total_words else 0
     return portion_local, portion_internet
 
-# --- Highlighting Function ---
+# =========================================================
+# 4. HIGHLIGHTING FUNCTION FOR WEB UI
+# =========================================================
+
 def highlight_plagiarized_chunks(student_text, local_details, internet_details):
     """
-    Returns an HTML string with plagiarized chunks highlighted in yellow.
-    Uses the same chunking as in the plagiarism functions.
+    Builds an HTML string that highlights flagged chunks in yellow.
     """
-    # Get flagged chunk indices from both methods
     flagged_local = {item["chunk_index"] for item in local_details}
     flagged_internet = {item["chunk_index"] for item in internet_details}
     flagged_indices = flagged_local.union(flagged_internet)
@@ -375,23 +352,22 @@ def highlight_plagiarized_chunks(student_text, local_details, internet_details):
     chunks = chunk_text(student_text)
     highlighted_html = ""
     for i, chunk in enumerate(chunks):
-        # Escape HTML characters robustly
         safe_chunk = html.escape(chunk)
         if i in flagged_indices:
-            # Highlight the chunk in yellow
             highlighted_html += f"<span style='background-color: yellow;'>{safe_chunk}</span> "
         else:
             highlighted_html += f"{safe_chunk} "
     return highlighted_html
 
 # =========================================================
-# =========== STREAMLIT APP (MAIN BODY) ===================
+# 5. STREAMLIT APP: UI, Analysis, and PDF Report Generation
 # =========================================================
 
 st.title("🚀 Generative AI-Based MEC102 Engineering Design Report Assessment")
 st.sidebar.header("Navigation")
 page = st.sidebar.radio("Go to", ["📊 Dashboard", "🔍 Plagiarism/Reasoning Finder", "📈 Student Analytics"])
 
+# ---- PLAGIARISM/REASONING FINDER PAGE ----
 if page == "🔍 Plagiarism/Reasoning Finder":
     st.header("📄 Upload and Assess Report")
     uploaded_file = st.file_uploader("Upload student's report (.docx or .pdf)", type=["docx", "pdf"])
@@ -403,12 +379,14 @@ if page == "🔍 Plagiarism/Reasoning Finder":
     local_score = 0.0
 
     if uploaded_file:
+        # Extract the student text based on file type
         ext = uploaded_file.name.split('.')[-1].lower()
         if ext == "pdf":
             student_text = extract_text_from_pdf(uploaded_file)
         else:
             student_text = extract_text_from_docx(uploaded_file)
 
+        # Provide a default JSON rubric for AI Assessment
         rubric_json = json.dumps({
             "Concept Understanding": 10,
             "Implementation": 10,
@@ -416,13 +394,12 @@ if page == "🔍 Plagiarism/Reasoning Finder":
             "Clarity": 5,
             "Creativity": 5
         }, indent=2)
-
         st.session_state["rubric_json"] = rubric_json
         rubric = st.text_area("✏️ Customize AI Feedback Rubric (JSON format)", value=rubric_json, height=150)
 
         col1, col2, col3, col4 = st.columns(4)
 
-        # 1) AI Assessment
+        # --- (1) AI-Based Assessment ---
         with col1:
             if st.button("📝 Generate AI Assessment"):
                 prompt = f"Evaluate based on rubric: {rubric}\n\nSubmission:\n{student_text}"
@@ -437,6 +414,7 @@ if page == "🔍 Plagiarism/Reasoning Finder":
                 ai_assessment = response.choices[0].message.content
                 st.session_state['ai_assessment'] = ai_assessment
 
+                # Extract overall score (fallback uses full rubric total)
                 score_match = re.search(r"Overall Score:\s*(\d+)/\d+", ai_assessment)
                 if score_match:
                     ai_score = int(score_match.group(1))
@@ -446,7 +424,7 @@ if page == "🔍 Plagiarism/Reasoning Finder":
                 st.success("✅ AI Feedback")
                 st.write(ai_assessment)
 
-        # 2) LLM-Based Plagiarism
+        # --- (2) LLM-Based Plagiarism Check ---
         with col2:
             if st.button("🔍 LLM-Based Plagiarism"):
                 prompt = f"Check for plagiarism and respond as: 'Plagiarism Risk: XX%'\n\nText:\n{student_text}"
@@ -462,35 +440,42 @@ if page == "🔍 Plagiarism/Reasoning Finder":
                 st.session_state['llm_plagiarism'] = llm_plagiarism
                 st.info(llm_plagiarism)
 
-        # 3) Single-Score Local Check
+        # --- (3) Single-Score Local Check ---
         with col3:
             if st.button("🔎 Compare with Local Reports"):
                 local_score = compute_local_plagiarism_scores(student_text)
                 st.session_state['local_similarity_score'] = local_score
                 st.success(f"📊 Local Similarity Score: {local_score}%")
 
-        # 4) Detailed Chunk-Based Plagiarism Analysis
+        # --- (4) Detailed Chunk-Based Plagiarism Analysis and Merge ---
         with col4:
             if st.button("🔬 Detailed Plagiarism Analysis"):
                 local_details = compute_local_plagiarism_details(student_text)
                 internet_details = compute_internet_plagiarism_details(student_text)
-                combined_results = combine_and_rank_plagiarism(local_details, internet_details)
+                # Instead of simply combining (which may create duplicates), merge results per chunk.
+                merged_results = merge_local_and_internet(local_details, internet_details)
+                # Calculate overall portions of plagiarized text.
                 portion_local, portion_internet = calculate_plagiarized_portions(local_details, internet_details, student_text)
-
                 st.markdown(f"**Local Plagiarized Portion:** {portion_local}%")
                 st.markdown(f"**Internet Plagiarized Portion:** {portion_internet}%")
-
-                if combined_results:
-                    st.write("### Detailed Plagiarism Matches (Ranked by Similarity Score)")
-                    df_res = pd.DataFrame(combined_results)
-                    st.dataframe(df_res)
+                
+                if merged_results:
+                    st.write("### Merged Detailed Plagiarism Matches (One Row per Chunk)")
+                    # For clarity, create a snippet for display
+                    df_merged = pd.DataFrame(merged_results)
+                    df_merged["snippet"] = df_merged["chunk_text"].apply(
+                        lambda txt: txt[:80] + "..." if len(txt) > 80 else txt
+                    )
+                    df_merged = df_merged[["chunk_index", "snippet", "best_score", "best_source_type", "local_file", "internet_url"]]
+                    df_merged = df_merged.sort_values("best_score", ascending=False)
+                    st.dataframe(df_merged)
                     if st.button("Highlight Plagiarized Text"):
                         highlighted_html = highlight_plagiarized_chunks(student_text, local_details, internet_details)
                         st.markdown(highlighted_html, unsafe_allow_html=True)
                 else:
                     st.info("No significant plagiarized portions found.")
 
-    # --- Export & Save to DB ---
+    # --- PDF Report and Database Save ---
     if st.button("📤 Export PDF Report and Save Scores"):
         ai_feedback = clean_text(st.session_state.get("ai_assessment", "Not available"))
         llm_result = clean_text(st.session_state.get("llm_plagiarism", "Plagiarism Risk: 0%"))
@@ -500,9 +485,11 @@ if page == "🔍 Plagiarism/Reasoning Finder":
         llm_percent = float(llm_percent_search.group(1)) if llm_percent_search else 0.0
         local_score = st.session_state.get("local_similarity_score", 0.0)
 
-        # Generate PDF
+        # Generate PDF Report
         pdf = FPDF()
         pdf.add_page()
+
+        # Report header (with logo, if exists)
         logo_path = "sastra_logo.jpg"
         if os.path.exists(logo_path):
             pdf.image(logo_path, x=45, y=10, w=125)
@@ -521,13 +508,37 @@ if page == "🔍 Plagiarism/Reasoning Finder":
         pdf.multi_cell(0, 10, f"LLM-Based Plagiarism Result:\n{llm_result}")
         pdf.ln(5)
         pdf.cell(0, 10, f"Local Similarity Score: {local_score}%", ln=True)
+        
+        # --- New Section: Highlighted Plagiarized Portions ---
+        pdf.ln(10)
+        pdf.set_font("Arial", 'B', 12)
+        pdf.cell(0, 10, "Highlighted Plagiarized Portions:", ln=True)
+        pdf.ln(2)
+        pdf.set_font("Arial", '', 10)
+
+        # Use the merged results so that each chunk appears only once
+        local_details = compute_local_plagiarism_details(student_text)
+        internet_details = compute_internet_plagiarism_details(student_text)
+        merged_results = merge_local_and_internet(local_details, internet_details)
+
+        if merged_results:
+            for item in merged_results:
+                snippet = item["chunk_text"][:100] + "..." if len(item["chunk_text"]) > 100 else item["chunk_text"]
+                line = f"Chunk {item['chunk_index']} (Best: {item['best_score']} - {item['best_source_type']}): {snippet}"
+                pdf.set_fill_color(255, 255, 0)  # Yellow background
+                pdf.multi_cell(0, 10, line, border=1, fill=True)
+                pdf.ln(2)
+        else:
+            pdf.cell(0, 10, "No significant plagiarized portions found.", ln=True)
+
+        # Prepare PDF for download
         pdf_output = BytesIO()
         pdf_bytes = pdf.output(dest="S").encode("latin1")
         pdf_output.write(pdf_bytes)
         pdf_output.seek(0)
         st.download_button("📥 Download Report", data=pdf_output, file_name=f"{student_id}_Report.pdf")
 
-        # Save to database
+        # Save assessment details to the database
         conn = init_db()
         c = conn.cursor()
         c.execute("""
@@ -542,6 +553,7 @@ if page == "🔍 Plagiarism/Reasoning Finder":
         conn.close()
         st.success("✅ Assessment saved to database.")
 
+# ---- STUDENT ANALYTICS PAGE ----
 elif page == "📈 Student Analytics":
     st.header("📈 Student Performance Analytics")
     df = get_student_quiz_history()
@@ -567,6 +579,7 @@ elif page == "📈 Student Analytics":
         st.info(f"**Average LLM Plagiarism %**: {student_df['llm_plagiarism_score'].mean():.2f}%")
         st.info(f"**Average Local Similarity %**: {student_df['local_similarity_score'].mean():.2f}%")
 
+# ---- CLASS-WIDE DASHBOARD PAGE ----
 elif page == "📊 Dashboard":
     st.header("📊 Class-Wide Analytics")
     df = get_student_quiz_history()
