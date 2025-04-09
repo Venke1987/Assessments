@@ -18,6 +18,7 @@ from fpdf import FPDF
 import unicodedata
 import re
 import random  # for dummy internet similarity
+import html  # for robust HTML escaping
 
 # --- Load OpenAI key ---
 load_dotenv()
@@ -81,8 +82,8 @@ def get_student_quiz_history(student_id=None):
 # --- Safe PDF Extraction ---
 def extract_pdf_safe(file_obj):
     """
-    Wrap fitz.open() in try/except. Return '' if it fails.
-    We read the file into memory, then pass the bytes to fitz.
+    Reads file into memory and attempts to extract text.
+    Raises fitz.fitz.EmptyFileError if file is unreadable.
     """
     data = file_obj.read()
     try:
@@ -92,14 +93,12 @@ def extract_pdf_safe(file_obj):
                 content += page.get_text()
         return content
     except fitz.fitz.EmptyFileError:
-        # Raise so we can catch it in the calling function
         raise
 
 # --- File Extractors ---
 def extract_text_from_pdf(uploaded_file):
     """
-    Standard extraction for an uploaded PDF in Streamlit (like for a single student's submission).
-    This does not do the try/except because we assume the user upload is valid.
+    For student uploads. Assumes valid PDF.
     """
     text = ""
     with fitz.open(stream=uploaded_file.read(), filetype="pdf") as doc:
@@ -130,7 +129,6 @@ def compute_local_plagiarism_scores(student_text, folder_path="local_reports"):
             try:
                 path = os.path.join(folder_path, fname)
                 with open(path, 'rb') as f:
-                    # If PDF, use the simpler approach (no try/except).
                     if fname.endswith(".pdf"):
                         text = extract_text_from_pdf(f)
                     else:
@@ -140,7 +138,6 @@ def compute_local_plagiarism_scores(student_text, folder_path="local_reports"):
                 score = cosine_similarity(tfidf[0:1], tfidf[1:2])[0][0]
                 similarities.append(score)
             except:
-                # If there's an error reading the file, skip it
                 continue
     return round(max(similarities)*100, 2) if similarities else 0.0
 
@@ -150,9 +147,7 @@ def compute_local_plagiarism_scores(student_text, folder_path="local_reports"):
 
 def chunk_text(text, chunk_size=300, overlap=50):
     """
-    Splits text into overlapping chunks based on word count.
-    chunk_size: number of words in each chunk
-    overlap: number of words overlapped between consecutive chunks
+    Splits text into overlapping chunks (by words).
     """
     words = text.split()
     chunks = []
@@ -168,9 +163,8 @@ def chunk_text(text, chunk_size=300, overlap=50):
 
 def compute_local_plagiarism_details(student_text, folder_path="local_reports", threshold=0.3):
     """
-    Returns detailed plagiarism info by comparing chunked student_text vs. chunked local reports.
-    threshold: minimum similarity to mark chunk as plagiarized
-    - Skips empty/unreadable files with a warning.
+    Compare chunked student_text vs. chunked local reports.
+    Skips unreadable or empty files.
     """
     student_chunks = chunk_text(student_text)
     local_docs = []
@@ -179,18 +173,13 @@ def compute_local_plagiarism_details(student_text, folder_path="local_reports", 
         for fname in os.listdir(folder_path):
             if fname.endswith((".pdf", ".docx")):
                 path = os.path.join(folder_path, fname)
-
-                # Skip if file is empty
                 if os.path.getsize(path) == 0:
                     st.warning(f"Skipping empty file: {fname}")
                     continue
-
-                # Attempt to open and extract text
                 try:
                     with open(path, 'rb') as f:
                         if fname.endswith(".pdf"):
-                            pdf_text = extract_pdf_safe(f)
-                            text = pdf_text
+                            text = extract_pdf_safe(f)
                         else:
                             text = extract_text_from_docx(f)
                 except fitz.fitz.EmptyFileError:
@@ -200,7 +189,6 @@ def compute_local_plagiarism_details(student_text, folder_path="local_reports", 
                     st.warning(f"Error reading file {fname}: {e}")
                     continue
 
-                # Now chunk the extracted text
                 doc_chunks = chunk_text(text)
                 local_docs.append((fname, doc_chunks))
 
@@ -208,12 +196,11 @@ def compute_local_plagiarism_details(student_text, folder_path="local_reports", 
     for i, s_chunk in enumerate(student_chunks):
         best_score = 0.0
         best_file = None
-        # Compare this chunk with all local doc chunks
         for fname, doc_chunks in local_docs:
             docs = [s_chunk] + doc_chunks
             tfidf = TfidfVectorizer().fit_transform(docs)
             sim_scores = cosine_similarity(tfidf[0:1], tfidf[1:]).flatten()
-            local_best = sim_scores.max()  # highest similarity among these chunk comparisons
+            local_best = sim_scores.max()
             if local_best > best_score:
                 best_score = local_best
                 best_file = fname
@@ -230,13 +217,12 @@ def compute_local_plagiarism_details(student_text, folder_path="local_reports", 
 
 def compute_internet_plagiarism_details(student_text, threshold=0.3):
     """
-    Placeholder function returning random similarity for demonstration.
-    Replace this with real internet-search or plagiarism service calls.
+    Placeholder: Returns random similarity scores for each chunk.
+    Replace with calls to a plagiarism API as needed.
     """
     student_chunks = chunk_text(student_text)
     detailed_results = []
     for i, s_chunk in enumerate(student_chunks):
-        # Random simulation of similarity
         simulated_score = random.uniform(0, 1)
         if simulated_score >= threshold:
             detailed_results.append({
@@ -250,11 +236,9 @@ def compute_internet_plagiarism_details(student_text, threshold=0.3):
 
 def combine_and_rank_plagiarism(local_details, internet_details):
     """
-    Combine local and internet plagiarism matches into one list, then rank by 'score' descending.
+    Merges local and internet plagiarism matches and sorts them by score descending.
     """
     combined = []
-
-    # from local
     for item in local_details:
         combined.append({
             "chunk_index": item["chunk_index"],
@@ -263,8 +247,6 @@ def combine_and_rank_plagiarism(local_details, internet_details):
             "score": item["best_local_score"],
             "source_file_or_url": item["best_local_file"]
         })
-
-    # from internet
     for item in internet_details:
         combined.append({
             "chunk_index": item["chunk_index"],
@@ -273,27 +255,47 @@ def combine_and_rank_plagiarism(local_details, internet_details):
             "score": item["best_internet_score"],
             "source_file_or_url": item["best_url"]
         })
-
-    # Sort by highest similarity first
     combined.sort(key=lambda x: x["score"], reverse=True)
     return combined
 
 def calculate_plagiarized_portions(local_details, internet_details, student_text):
     """
-    Calculate what % of the student's text is flagged as plagiarized from local vs. internet.
+    Calculates the percentage of the student text flagged as plagiarized.
     """
     student_chunks = chunk_text(student_text)
     total_words = sum(len(ch.split()) for ch in student_chunks)
 
-    flagged_local_indices = set([item["chunk_index"] for item in local_details])
-    flagged_internet_indices = set([item["chunk_index"] for item in internet_details])
-
+    flagged_local_indices = {item["chunk_index"] for item in local_details}
+    flagged_internet_indices = {item["chunk_index"] for item in internet_details}
     local_word_count = sum(len(student_chunks[i].split()) for i in flagged_local_indices)
     internet_word_count = sum(len(student_chunks[i].split()) for i in flagged_internet_indices)
 
     portion_local = round((local_word_count / total_words) * 100, 2) if total_words else 0
     portion_internet = round((internet_word_count / total_words) * 100, 2) if total_words else 0
     return portion_local, portion_internet
+
+# --- Highlighting Function ---
+def highlight_plagiarized_chunks(student_text, local_details, internet_details):
+    """
+    Returns an HTML string with plagiarized chunks highlighted in yellow.
+    Uses the same chunking as in the plagiarism functions.
+    """
+    # Get flagged chunk indices from both methods
+    flagged_local = {item["chunk_index"] for item in local_details}
+    flagged_internet = {item["chunk_index"] for item in internet_details}
+    flagged_indices = flagged_local.union(flagged_internet)
+
+    chunks = chunk_text(student_text)
+    highlighted_html = ""
+    for i, chunk in enumerate(chunks):
+        # Escape HTML characters robustly
+        safe_chunk = html.escape(chunk)
+        if i in flagged_indices:
+            # Highlight the chunk in yellow
+            highlighted_html += f"<span style='background-color: yellow;'>{safe_chunk}</span> "
+        else:
+            highlighted_html += f"{safe_chunk} "
+    return highlighted_html
 
 # =========================================================
 # =========== STREAMLIT APP (MAIN BODY) ===================
@@ -314,7 +316,6 @@ if page == "🔍 Plagiarism/Reasoning Finder":
     local_score = 0.0
 
     if uploaded_file:
-        # Determine file type and extract text
         ext = uploaded_file.name.split('.')[-1].lower()
         if ext == "pdf":
             student_text = extract_text_from_pdf(uploaded_file)
@@ -346,18 +347,14 @@ if page == "🔍 Plagiarism/Reasoning Finder":
                     ],
                     temperature=0.2
                 )
-
                 ai_assessment = response.choices[0].message.content
                 st.session_state['ai_assessment'] = ai_assessment
 
-                # Attempt to extract "Overall Score: X/..." from the AI assessment
                 score_match = re.search(r"Overall Score:\s*(\d+)/\d+", ai_assessment)
                 if score_match:
                     ai_score = int(score_match.group(1))
                 else:
-                    # fallback if not found
                     ai_score = sum(json.loads(rubric).values())
-
                 st.session_state['ai_score'] = ai_score
                 st.success("✅ AI Feedback")
                 st.write(ai_assessment)
@@ -385,19 +382,12 @@ if page == "🔍 Plagiarism/Reasoning Finder":
                 st.session_state['local_similarity_score'] = local_score
                 st.success(f"📊 Local Similarity Score: {local_score}%")
 
-        # 4) Detailed Plagiarism Analysis (chunk-level)
+        # 4) Detailed Chunk-Based Plagiarism Analysis
         with col4:
             if st.button("🔬 Detailed Plagiarism Analysis"):
-                # 1) Local chunk-level details
                 local_details = compute_local_plagiarism_details(student_text)
-
-                # 2) Internet chunk-level details (placeholder)
                 internet_details = compute_internet_plagiarism_details(student_text)
-
-                # 3) Combine & rank
                 combined_results = combine_and_rank_plagiarism(local_details, internet_details)
-
-                # 4) Calculate how much of the text is plagiarized
                 portion_local, portion_internet = calculate_plagiarized_portions(local_details, internet_details, student_text)
 
                 st.markdown(f"**Local Plagiarized Portion:** {portion_local}%")
@@ -407,6 +397,9 @@ if page == "🔍 Plagiarism/Reasoning Finder":
                     st.write("### Detailed Plagiarism Matches (Ranked by Similarity Score)")
                     df_res = pd.DataFrame(combined_results)
                     st.dataframe(df_res)
+                    if st.button("Highlight Plagiarized Text"):
+                        highlighted_html = highlight_plagiarized_chunks(student_text, local_details, internet_details)
+                        st.markdown(highlighted_html, unsafe_allow_html=True)
                 else:
                     st.info("No significant plagiarized portions found.")
 
@@ -416,7 +409,6 @@ if page == "🔍 Plagiarism/Reasoning Finder":
         llm_result = clean_text(st.session_state.get("llm_plagiarism", "Plagiarism Risk: 0%"))
         rubric_dict = json.loads(st.session_state.get("rubric_json", "{}"))
         total_score = st.session_state.get('ai_score', sum(rubric_dict.values()))
-
         llm_percent_search = re.search(r"(\d+)%", llm_result)
         llm_percent = float(llm_percent_search.group(1)) if llm_percent_search else 0.0
         local_score = st.session_state.get("local_similarity_score", 0.0)
@@ -424,37 +416,31 @@ if page == "🔍 Plagiarism/Reasoning Finder":
         # Generate PDF
         pdf = FPDF()
         pdf.add_page()
-
         logo_path = "sastra_logo.jpg"
         if os.path.exists(logo_path):
             pdf.image(logo_path, x=45, y=10, w=125)
             pdf.ln(30)
-
         pdf.set_font("Arial", 'B', 14)
         pdf.cell(0, 10, f"Assessment Report for Student ID: {student_id}", ln=True, align='C')
         pdf.ln(10)
-
         pdf.set_font("Arial", '', 12)
         pdf.cell(0, 10, f"Name: {student_name}", ln=True)
         pdf.cell(0, 10, f"Total Score: {total_score}/50", ln=True)
         for k, v in rubric_dict.items():
             pdf.cell(0, 10, f"- {k}: {v}/10", ln=True)
         pdf.ln(5)
-
         pdf.multi_cell(0, 10, f"AI Assessment:\n{ai_feedback}")
         pdf.ln(5)
         pdf.multi_cell(0, 10, f"LLM-Based Plagiarism Result:\n{llm_result}")
         pdf.ln(5)
         pdf.cell(0, 10, f"Local Similarity Score: {local_score}%", ln=True)
-
         pdf_output = BytesIO()
         pdf_bytes = pdf.output(dest="S").encode("latin1")
         pdf_output.write(pdf_bytes)
         pdf_output.seek(0)
-
         st.download_button("📥 Download Report", data=pdf_output, file_name=f"{student_id}_Report.pdf")
 
-        # Save to DB
+        # Save to database
         conn = init_db()
         c = conn.cursor()
         c.execute("""
@@ -472,29 +458,22 @@ if page == "🔍 Plagiarism/Reasoning Finder":
 elif page == "📈 Student Analytics":
     st.header("📈 Student Performance Analytics")
     df = get_student_quiz_history()
-
     if df.empty:
         st.warning("No assessment records available.")
     else:
         student_ids = df['student_id'].unique().tolist()
         selected_id = st.selectbox("Select Student ID", student_ids)
-
         student_df = df[df['student_id'] == selected_id]
         student_name = student_df['student_name'].iloc[0]
         st.subheader(f"Performance Analytics for: {student_name} ({selected_id})")
-
         student_df["timestamp"] = pd.to_datetime(student_df["timestamp"])
         student_df = student_df.sort_values("timestamp")
-
         st.markdown("### 🧠 AI Score Trend")
         st.line_chart(student_df.set_index("timestamp")[["ai_score"]])
-
         st.markdown("### 🔍 LLM Plagiarism Trend")
         st.line_chart(student_df.set_index("timestamp")[["llm_plagiarism_score"]])
-
         st.markdown("### 🧪 Local Similarity Trend")
         st.line_chart(student_df.set_index("timestamp")[["local_similarity_score"]])
-
         st.markdown("### 🔢 Summary")
         st.dataframe(student_df[["topic", "ai_score", "llm_plagiarism_score", "local_similarity_score", "timestamp"]])
         st.info(f"**Average AI Score**: {student_df['ai_score'].mean():.2f}")
@@ -504,7 +483,6 @@ elif page == "📈 Student Analytics":
 elif page == "📊 Dashboard":
     st.header("📊 Class-Wide Analytics")
     df = get_student_quiz_history()
-
     if df.empty:
         st.warning("No assessment records found.")
     else:
@@ -513,16 +491,12 @@ elif page == "📊 Dashboard":
             "llm_plagiarism_score": "mean",
             "local_similarity_score": "mean"
         }).reset_index()
-
         st.subheader("🧠 Average AI Score per Student")
         st.bar_chart(avg_df.set_index("student_id")[["ai_score"]])
-
         st.subheader("🔍 Average LLM Plagiarism %")
         st.bar_chart(avg_df.set_index("student_id")[["llm_plagiarism_score"]])
-
         st.subheader("🧪 Average Local Similarity %")
         st.bar_chart(avg_df.set_index("student_id")[["local_similarity_score"]])
-
         st.subheader("🏆 Top Students by AI Score")
         st.table(
             avg_df.sort_values("ai_score", ascending=False).head(5)
