@@ -162,13 +162,10 @@ def chunk_text(text, chunk_size=300, overlap=50):
     return chunks
 
 def compute_local_plagiarism_details(student_text, folder_path="local_reports", threshold=0.3):
-    """
-    Compare chunked student_text vs. chunked local reports.
-    Skips unreadable or empty files.
-    """
     student_chunks = chunk_text(student_text)
     local_docs = []
 
+    # Gather local docs + chunk them
     if os.path.exists(folder_path):
         for fname in os.listdir(folder_path):
             if fname.endswith((".pdf", ".docx")):
@@ -179,9 +176,9 @@ def compute_local_plagiarism_details(student_text, folder_path="local_reports", 
                 try:
                     with open(path, 'rb') as f:
                         if fname.endswith(".pdf"):
-                            text = extract_pdf_safe(f)
+                            file_text = extract_pdf_safe(f)
                         else:
-                            text = extract_text_from_docx(f)
+                            file_text = extract_text_from_docx(f)
                 except fitz.fitz.EmptyFileError:
                     st.warning(f"Skipping unreadable PDF: {fname}")
                     continue
@@ -189,21 +186,45 @@ def compute_local_plagiarism_details(student_text, folder_path="local_reports", 
                     st.warning(f"Error reading file {fname}: {e}")
                     continue
 
-                doc_chunks = chunk_text(text)
+                # If the doc is empty, skip
+                if not file_text.strip():
+                    st.warning(f"Skipping file {fname} because it's empty.")
+                    continue
+
+                doc_chunks = chunk_text(file_text)
                 local_docs.append((fname, doc_chunks))
 
     detailed_results = []
     for i, s_chunk in enumerate(student_chunks):
+        # Skip empty student chunk
+        if not s_chunk.strip():
+            continue
+
         best_score = 0.0
         best_file = None
+
         for fname, doc_chunks in local_docs:
-            docs = [s_chunk] + doc_chunks
-            tfidf = TfidfVectorizer().fit_transform(docs)
-            sim_scores = cosine_similarity(tfidf[0:1], tfidf[1:]).flatten()
-            local_best = sim_scores.max()
-            if local_best > best_score:
-                best_score = local_best
-                best_file = fname
+            # Filter out empty doc chunks
+            valid_doc_chunks = [dc for dc in doc_chunks if dc.strip()]
+            if not valid_doc_chunks:
+                continue
+
+            docs = [s_chunk] + valid_doc_chunks
+            if len(docs) < 2:
+                continue
+
+            # Safely handle TfidfVectorizer
+            try:
+                tfidf = TfidfVectorizer().fit_transform(docs)
+                sim_scores = cosine_similarity(tfidf[0:1], tfidf[1:]).flatten()
+                local_best = sim_scores.max()
+                if local_best > best_score:
+                    best_score = local_best
+                    best_file = fname
+            except ValueError as ve:
+                st.warning(f"Skipping chunk {i} with {fname} due to TF-IDF error: {ve}")
+                continue
+
         if best_score >= threshold:
             detailed_results.append({
                 "chunk_index": i,
@@ -214,6 +235,7 @@ def compute_local_plagiarism_details(student_text, folder_path="local_reports", 
             })
 
     return detailed_results
+
 
 def compute_internet_plagiarism_details(student_text, threshold=0.3):
     """
