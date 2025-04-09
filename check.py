@@ -543,7 +543,6 @@ if st.button("📤 Export PDF Report and Save Scores"):
     pdf.ln(3)
     pdf.set_font("Arial", '', 9)
 
-    # Recompute detailed results (ensure variable scope)
     local_details = compute_local_plagiarism_details(student_text)
     internet_details = compute_internet_plagiarism_details(student_text)
     merged_results = merge_local_and_internet(local_details, internet_details)
@@ -552,7 +551,7 @@ if st.button("📤 Export PDF Report and Save Scores"):
 
     # Finalize PDF and prepare for download
     pdf_output = BytesIO()
-    pdf_bytes = pdf.output(dest="S").encode("latin1")
+    pdf_bytes = pdf.output(dest="S")  # Use raw bytes without .encode("latin1")
     pdf_output.write(pdf_bytes)
     pdf_output.seek(0)
     st.download_button("📥 Download Report", data=pdf_output, file_name=f"{student_id}_Report.pdf")
