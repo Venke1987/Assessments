@@ -11,7 +11,7 @@ from streamlit_cookies_manager import EncryptedCookieManager
 # 1) PAGE CONFIG & LOGO
 # -----------------------------------------------------------------------------
 st.set_page_config(page_title="EIE116 AI Open Book Unproctored Quiz SASTRA", layout="centered")
-st.image("sastra_logo.jpg", use_container_width=True)
+st.image("sastra_logo.jpg", use_column_width=True)
 
 # -----------------------------------------------------------------------------
 # 2) ADMIN PASSWORD
@@ -681,7 +681,7 @@ def show_admin_section():
         st.write("")
         st.write("")
         st.write("")
-        st.image("sastra_logo1.jpg", use_container_width=True)
+        st.image("sastra_logo1.jpg", use_column_width=True)
 
 if __name__ == "__main__":
     add_footer()
