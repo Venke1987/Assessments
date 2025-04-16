@@ -449,7 +449,7 @@ def compute_score(answers_list: list) -> int:
 
 def download_all_results(df: pd.DataFrame) -> str:
     max_q = len(QUESTIONS)
-    columns = ["student_id", "status", "score"] + [f"Q{i+1}" for i in range(max_q)]
+    columns = ["student_id", "status", "score", "submitted_at"] + [f"Q{i+1}" for i in range(max_q)]
     rows = []
 
     for _, row in df.iterrows():
@@ -458,6 +458,7 @@ def download_all_results(df: pd.DataFrame) -> str:
             row["student_id"],
             row["status"],
             f"{row['score']}/{max_q}",
+            row.get("submitted_at", "")  # handle older rows without timestamps
         ]
         for ans in answers_list:
             row_out.append(ans[0] if ans else "")
